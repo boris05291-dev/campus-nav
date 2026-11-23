@@ -192,8 +192,8 @@ main.py 讀 map_data.json → CampusGraph 建好鄰接表 → 開視窗
 | `test_graph.py` | 讀 JSON、鄰接表、找地點、推薦清單 |
 | `test_pathfinder.py` | Dijkstra：一般路線、走不到、起點等於終點、打錯字 |
 | `test_algorithms.py` | 三種演算法在真正的地圖上任兩點距離都一樣；A\* 檢查的道路不比 Dijkstra 多；坡度計算與最省力路線 |
-| `test_route.py` | 輸入檢查、途經點、導航步驟、轉彎判斷 |
-| `test_direction.py` | 方向判斷（↑↗→…） |
+| `test_route.py` | 輸入檢查、途經點、導航步驟（跳過路口、沿著彎路判斷轉彎） |
+| `test_direction.py` | 八個方向（↑↗→…）與轉彎判斷（直走／左轉／右轉／迴轉） |
 | `test_data.py` | 檢查地圖資料本身有沒有打錯：距離和畫的線合不合、每個地點都走得到、海拔和坡度在合理範圍 |
 
 其中 `test_map.json` 是 4 個點的小地圖，可以用手算出正確答案來對照；`test_data.py` 則檢查真正的校園資料，以後改了 JSON，跑一次測試就知道有沒有改壞。
