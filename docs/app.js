@@ -1,0 +1,226 @@
+// docs/app.js
+// 負責：網頁版的畫面。讀 map_data.json → 畫地圖（SVG）→ 下拉選單、點地圖選地點 → 按下「開始導航」畫出路線。
+// 計算的部分（建圖、Dijkstra、整理站點）在 pathfinder.js。
+
+var SVG_NS = "http://www.w3.org/2000/svg";
+var WALK_SPEED = 70;   // 每分鐘走 70 公尺，和 Python 版 config.py 一樣
+var PLACE_COLORS = { building: "#2F6FB0", facility: "#3A9D5D", gate: "#D9822B" };
+
+// 風景的座標，從 ui/scenery.py 複製過來（只是裝飾，和找路線無關）
+var LAND = [[380, 250], [420, 180], [500, 130], [600, 95], [700, 60], [780, 55], [860, 70], [960, 80], [1060, 120], [1150, 150], [1260, 160], [1360, 175], [1480, 180], [1600, 185], [1600, 640], [1450, 630], [1300, 640], [1150, 650], [1050, 690], [950, 740], [860, 770], [720, 775], [690, 700], [680, 600], [640, 520], [560, 470], [470, 460], [400, 430], [370, 340]];
+var LAKES = [
+  [[430, 400], [470, 383], [520, 392], [575, 385], [610, 402], [585, 428], [530, 432], [485, 450], [440, 432]],
+  [[1195, 375], [1220, 352], [1265, 350], [1305, 362], [1300, 395], [1260, 410], [1215, 402]]
+];
+var FIELDS = [[850, 600, 920, 650, "#D9C3BE"], [690, 600, 738, 700, "#D9C3BE"], [1010, 194, 1062, 232, "#D9C3BE"], [955, 298, 985, 328, "#D9C3BE"], [940, 418, 966, 442, "#B5574A"], [972, 418, 998, 442, "#B5574A"], [903, 226, 931, 240, "#4E8FB5"]];
+var BUILDINGS = [["J", 0, 0, 50, 30, "#8FD3CF"], ["A", 0, 0, 30, 24, "#F2C9A8"], ["B", 0, 0, 60, 40, "#EBA58F"], ["P7", 0, 0, 30, 24, "#D9B3E0"], ["K", 0, 0, 40, 30, "#F4E7C5"], ["I", 0, 0, 70, 26, "#E6EFD0"], ["H", 0, 0, 60, 30, "#9C8CC7"], ["D", 0, 0, 44, 28, "#8FD3CF"], ["C", 0, 0, 60, 22, "#EBA58F"], ["F", 0, 0, 40, 24, "#EBA58F"], ["P6", 0, 0, 50, 30, "#8FB8DE"], ["M", 0, 17, 50, 30, "#F4EED8"], ["Nd", 7, 15, 50, 30, "#F4EED8"], ["L", 0, 0, 30, 24, "#B9D9A0"]];
+
+var graph = null;
+var svg = document.getElementById("map");
+var startSelect = document.getElementById("start");
+var endSelect = document.getElementById("end");
+var resultBox = document.getElementById("result");
+var routeLayer = null;   // 放路線的圖層，要清掉路線時只清這一層
+
+// 建立一個 SVG 元素，attrs 是屬性，例如 {cx: 10, fill: "red"}
+function el(tag, attrs, parent) {
+  var node = document.createElementNS(SVG_NS, tag);
+  for (var key in attrs) node.setAttribute(key, attrs[key]);
+  parent.appendChild(node);
+  return node;
+}
+
+// 把 [[x, y], ...] 變成 "x,y x,y ..."，給 polyline 用
+function pointsText(points) {
+  return points.map(function (p) { return p[0] + "," + p[1]; }).join(" ");
+}
+
+// 把外框點變成圓滑的封閉曲線（和 tkinter 的 smooth=True 一樣：曲線經過相鄰兩點的中點）
+function smoothPath(points) {
+  var n = points.length;
+  function mid(i) {
+    var a = points[i % n], b = points[(i + 1) % n];
+    return ((a[0] + b[0]) / 2) + "," + ((a[1] + b[1]) / 2);
+  }
+  var d = "M" + mid(0);
+  for (var i = 1; i <= n; i++) d += " Q" + points[i % n][0] + "," + points[i % n][1] + " " + mid(i);
+  return d + "Z";
+}
+
+// 畫綠地、湖、操場、場地、建築物
+function drawScenery() {
+  el("path", { d: smoothPath(LAND), fill: "#A9C48A" }, svg);
+  LAKES.forEach(function (lake) {
+    el("path", { d: smoothPath(lake), fill: "#5DB8A8", stroke: "#3E9886", "stroke-width": 2 }, svg);
+  });
+  el("ellipse", { cx: 1010, cy: 517.5, rx: 60, ry: 37.5, fill: "#C8624F", stroke: "#A84F3F" }, svg);
+  el("ellipse", { cx: 1010, cy: 517.5, rx: 51, ry: 28.5, fill: "#8FBF6A", stroke: "#F0F0F0" }, svg);
+  el("ellipse", { cx: 682.5, cy: 319, rx: 22.5, ry: 21, fill: "#E3D3C3", stroke: "#C9B5A3" }, svg);
+  FIELDS.forEach(function (f) {
+    el("rect", { x: f[0], y: f[1], width: f[2] - f[0], height: f[3] - f[1], fill: f[4], stroke: "#B8A39C" }, svg);
+  });
+  BUILDINGS.forEach(function (b) {
+    var p = graph.places[b[0]];
+    var x = p.x + b[1] - b[3] / 2, y = p.y + b[2] - b[4] / 2;
+    el("rect", { x: x + 3, y: y + 3, width: b[3], height: b[4], fill: "#7E9A66" }, svg);   // 影子
+    el("rect", { x: x, y: y, width: b[3], height: b[4], fill: b[5], stroke: "#7A7A7A" }, svg);
+  });
+}
+
+// 畫道路：先畫全部的綠色邊線，再畫白色路面，路口才會接得乾淨
+function drawRoads() {
+  [["#8CA872", 8], ["#FFFFFF", 5]].forEach(function (style) {
+    graph.edges.forEach(function (e) {
+      el("polyline", { points: pointsText(e.path), fill: "none", stroke: style[0], "stroke-width": style[1], "stroke-linecap": "round", "stroke-linejoin": "round" }, svg);
+    });
+  });
+}
+
+// 檢查兩個方框 {x, y, width, height} 有沒有重疊
+function overlap(a, b) {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+// 畫可以選的地點（圓點 + 名稱），點下去就選成起點或終點
+// 名稱依序試「下、右、左、上」，用第一個不會蓋到別的名稱或圓點的位置（和 Python 版一樣）
+function drawPlaces() {
+  var ids = Object.keys(graph.places).filter(function (id) { return graph.places[id].type !== "junction"; });
+  var taken = [];   // 已經被圓點或名稱佔用的範圍
+  var groups = {};
+
+  // 第一輪：畫圓點
+  ids.forEach(function (id) {
+    var p = graph.places[id];
+    var g = el("g", { "class": "place", tabindex: 0, role: "button", "aria-label": p.name }, svg);
+    el("title", {}, g).textContent = p.name;   // 滑鼠移上去會顯示全名
+    el("circle", { cx: p.x, cy: p.y, r: 16, fill: "transparent" }, g);   // 看不見的大圓，手機比較好點
+    el("circle", { cx: p.x, cy: p.y, r: 6, fill: PLACE_COLORS[p.type] || PLACE_COLORS.facility, stroke: "#fff", "stroke-width": 2 }, g);
+    g.addEventListener("click", function () { pickFromMap(id); });
+    g.addEventListener("keydown", function (event) { if (event.key === "Enter") pickFromMap(id); });
+    taken.push({ x: p.x - 6, y: p.y - 6, width: 12, height: 12 });
+    groups[id] = g;
+  });
+
+  // 第二輪：放名稱
+  ids.forEach(function (id) {
+    var p = graph.places[id];
+    var text = el("text", {}, groups[id]);
+    text.textContent = shortName(graph, id).split("、")[0];
+    var positions = [[0, 9, "middle", "hanging"], [9, 0, "start", "middle"], [-9, 0, "end", "middle"], [0, -9, "middle", "auto"]];
+    for (var i = 0; i <= positions.length; i++) {
+      var pos = positions[i % positions.length];   // 四個都重疊就回到「下面」
+      text.setAttribute("x", p.x + pos[0]);
+      text.setAttribute("y", p.y + pos[1]);
+      text.setAttribute("text-anchor", pos[2]);
+      text.setAttribute("dominant-baseline", pos[3]);
+      var box = text.getBBox();
+      if (i === positions.length || !taken.some(function (t) { return overlap(box, t); })) {
+        taken.push(box);
+        break;
+      }
+    }
+  });
+}
+
+// 把地點放進兩個下拉選單（路口不能選），照名稱排序
+function fillSelects() {
+  var ids = Object.keys(graph.places).filter(function (id) { return graph.places[id].type !== "junction"; });
+  ids.sort(function (a, b) { return graph.places[a].name.localeCompare(graph.places[b].name, "zh-Hant", { numeric: true }); });
+  [startSelect, endSelect].forEach(function (select, index) {
+    var empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = index === 0 ? "請選擇起點" : "請選擇終點";
+    select.appendChild(empty);
+    ids.forEach(function (id) {
+      var option = document.createElement("option");
+      option.value = id;
+      option.textContent = graph.places[id].name;
+      select.appendChild(option);
+    });
+  });
+}
+
+// 點地圖上的地點：還沒有起點、或起終點都選好了 → 當作新的起點；不然當作終點
+function pickFromMap(id) {
+  if (startSelect.value === "" || endSelect.value !== "") {
+    startSelect.value = id;
+    endSelect.value = "";
+    clearRoute();
+    showMarker(id, "#2E7D32");
+    resultBox.innerHTML = "<p>起點：" + shortName(graph, id) + "<br>請再點一個地點當終點。</p>";
+  } else {
+    endSelect.value = id;
+    findRoute();
+  }
+}
+
+// 清掉地圖上的路線和起終點標記
+function clearRoute() {
+  routeLayer.innerHTML = "";
+}
+
+// 在地點上畫一個有白邊的大圓點，標示起點（綠）或終點（紅）
+function showMarker(id, color) {
+  var p = graph.places[id];
+  el("circle", { cx: p.x, cy: p.y, r: 9, fill: color, stroke: "#fff", "stroke-width": 3 }, routeLayer);
+}
+
+// 顯示一行錯誤訊息
+function showError(message) {
+  clearRoute();
+  resultBox.innerHTML = '<p class="error">' + message + "</p>";
+}
+
+// 按下「開始導航」：檢查選擇 → Dijkstra → 畫紅線 → 列出經過的地點、總距離、步行時間
+function findRoute() {
+  var start = startSelect.value, end = endSelect.value;
+  if (start === "") return showError("請選擇起點。");
+  if (end === "") return showError("請選擇終點。");
+  if (start === end) return showError("起點和終點是同一個地方。");
+
+  var answer = dijkstra(graph, start, end);
+  var path = answer[0], total = answer[1];
+  if (path.length === 0) return showError("這兩個地點之間沒有道路可以走到。");
+
+  // 把每一段道路的折線接起來；下一段的第一個點和上一段最後一個點一樣，所以跳過
+  var points = [];
+  for (var i = 0; i < path.length - 1; i++) {
+    var segment = edgePoints(graph, path[i], path[i + 1]);
+    points = points.concat(i > 0 ? segment.slice(1) : segment);
+  }
+  clearRoute();
+  el("polyline", { points: pointsText(points), fill: "none", stroke: "#E53935", "stroke-width": 6, "stroke-linecap": "round", "stroke-linejoin": "round" }, routeLayer);
+  showMarker(start, "#2E7D32");
+  showMarker(end, "#C62828");
+
+  // 步行時間：和 Python 版一樣，總距離 ÷ 70，取到小數第 1 位
+  var html = '<div class="summary">總距離：' + total + " 公尺<br>步行時間：約 " + (total / WALK_SPEED).toFixed(1) + " 分鐘</div><ol>";
+  buildStops(graph, path).forEach(function (stop, index) {
+    html += "<li>" + shortName(graph, stop[0]);
+    if (index > 0) html += " <small>（走 " + stop[1] + " 公尺）</small>";
+    html += "</li>";
+  });
+  resultBox.innerHTML = html + "</ol>";
+}
+
+// 程式開始：讀資料 → 畫地圖 → 綁定按鈕
+fetch("map_data.json")
+  .then(function (response) { return response.json(); })
+  .then(function (data) {
+    graph = buildGraph(data);
+    drawScenery();
+    drawRoads();
+    routeLayer = el("g", {}, svg);   // 路線在道路上面、地點下面
+    drawPlaces();
+    fillSelects();
+    document.getElementById("go").addEventListener("click", findRoute);
+    document.getElementById("swap").addEventListener("click", function () {
+      var t = startSelect.value;
+      startSelect.value = endSelect.value;
+      endSelect.value = t;
+      if (startSelect.value !== "" && endSelect.value !== "") findRoute();
+    });
+  })
+  .catch(function (error) {
+    resultBox.innerHTML = '<p class="error">讀不到地圖資料：' + error + "</p>";
+  });
