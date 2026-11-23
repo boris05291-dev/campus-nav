@@ -134,7 +134,7 @@ class MapView(tk.Canvas):
             # 地圖空間比較小，名稱再去掉「、」後面的部分，例如「J 圖書館、教學大樓」→「J 圖書館」
             # config.MAP_LABELS 有寫的地點，改用更短的名稱，比較不會擋到道路
             text = config.MAP_LABELS.get(place_id, self.graph.short_name(place_id).split("、")[0])
-            label = self.place_label(x, y, text)
+            label = self.place_label(x, y, text, config.LABEL_SIDES.get(place_id))
             # 滑鼠移到圓點或名稱上就顯示全名，移開就收起來
             # pid=place_id 是把「這一圈的 id」存進 lambda，不然每個地點都會變成最後一個 id
             for item in (dots[place_id], label):
@@ -144,22 +144,30 @@ class MapView(tk.Canvas):
 
     # 在圓點旁邊放名稱：試 8 個位置（下、右、左、上、右下、左下、右上、左上），
     # 每個位置算「重疊分數」，用分數最低的；分數 0（什麼都沒蓋到）就直接用，不用再試
-    def place_label(self, x, y, text):
+    # side 是 config.LABEL_SIDES 指定的位置（例如 "上"）：先試它，只要沒蓋到別的名稱或圓點就用它（蓋到路沒關係），
+    # 會蓋到的話，還是照上面的方法自動挑
+    def place_label(self, x, y, text, side=None):
         r = config.PLACE_RADIUS
         # 每個位置是 (往右移多少, 往下移多少, 文字要對齊圓點的哪一邊)
-        positions = [
-            (0, r + 2, tk.N),
-            (r + 3, 0, tk.W),
-            (-r - 3, 0, tk.E),
-            (0, -r - 2, tk.S),
-            (r, r, tk.NW),
-            (-r, r, tk.NE),
-            (r, -r, tk.SW),
-            (-r, -r, tk.SE),
-        ]
+        all_positions = {
+            "下": (0, r + 2, tk.N),
+            # 左右多留 5 像素：白底比字寬 2 像素，太靠近會被當成蓋到自己的圓點
+            "右": (r + 5, 0, tk.W),
+            "左": (-r - 5, 0, tk.E),
+            "上": (0, -r - 2, tk.S),
+            "右下": (r, r, tk.NW),
+            "左下": (-r, r, tk.NE),
+            "右上": (r, -r, tk.SW),
+            "左上": (-r, -r, tk.SE),
+        }
+        positions = list(all_positions.values())
+        if side in all_positions:
+            # 把指定的位置移到第一個試
+            positions.remove(all_positions[side])
+            positions.insert(0, all_positions[side])
         best_label = None
         best_score = 0
-        for dx, dy, anchor in positions:
+        for i, (dx, dy, anchor) in enumerate(positions):
             label = self.create_text(
                 x + dx, y + dy,
                 text=text,
@@ -178,6 +186,9 @@ class MapView(tk.Canvas):
             else:
                 self.delete(label)
             if best_score == 0:
+                break
+            # 第一個試的是指定的位置，分數不到 100（只蓋到路）就用它
+            if i == 0 and side in all_positions and score < 100:
                 break
 
         self.add_label_background(best_label)
