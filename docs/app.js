@@ -17,8 +17,9 @@ var BUILDINGS = [["J", 0, 0, 50, 30, "#8FD3CF"], ["A", 0, 0, 30, 24, "#F2C9A8"],
 
 var graph = null;
 var svg = document.getElementById("map");
-var startSelect = document.getElementById("start");
-var endSelect = document.getElementById("end");
+var startInput = document.getElementById("start");
+var viaInput = document.getElementById("via");
+var endInput = document.getElementById("end");
 var resultBox = document.getElementById("result");
 var routeLayer = null;   // 放路線的圖層，要清掉路線時只清這一層
 
@@ -122,34 +123,89 @@ function drawPlaces() {
   });
 }
 
-// 把地點放進兩個下拉選單（路口不能選），照名稱排序
-function fillSelects() {
-  var ids = Object.keys(graph.places).filter(function (id) { return graph.places[id].type !== "junction"; });
-  ids.sort(function (a, b) { return graph.places[a].name.localeCompare(graph.places[b].name, "zh-Hant", { numeric: true }); });
-  [startSelect, endSelect].forEach(function (select, index) {
-    var empty = document.createElement("option");
-    empty.value = "";
-    empty.textContent = index === 0 ? "請選擇起點" : "請選擇終點";
-    select.appendChild(empty);
-    ids.forEach(function (id) {
-      var option = document.createElement("option");
-      option.value = id;
-      option.textContent = graph.places[id].name;
-      select.appendChild(option);
+// 讓一個輸入框有「推薦清單」（對應 Python 版的 SearchBox）
+// 點進去或打字就用 suggest 推薦地點；↑↓ 移動、Enter 選定、Esc 收起；選好後執行 onEnter
+function setupSearchBox(input, onEnter) {
+  var list = document.getElementById(input.id + "-list");
+  var suggestions = [];
+  var selected = 0;
+
+  // 依照輸入框的字重新產生推薦清單，預設選第一筆（最像的）
+  function update() {
+    suggestions = suggest(graph, input.value);
+    selected = 0;
+    list.innerHTML = "";
+    suggestions.forEach(function (id, index) {
+      var li = document.createElement("li");
+      li.id = input.id + "-opt-" + index;
+      li.setAttribute("role", "option");
+      li.textContent = graph.places[id].name;
+      // 用 mousedown 而不是 click：click 發生前輸入框就失去焦點、清單已經收起來了
+      li.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        selected = index;
+        choose();
+      });
+      list.appendChild(li);
     });
+    if (suggestions.length === 0) hide();
+    else { list.hidden = false; input.setAttribute("aria-expanded", "true"); highlight(); }
+  }
+
+  // 標出目前選到的那一筆，並捲到看得見的地方
+  function highlight() {
+    for (var i = 0; i < list.children.length; i++) {
+      list.children[i].setAttribute("aria-selected", i === selected ? "true" : "false");
+    }
+    input.setAttribute("aria-activedescendant", input.id + "-opt-" + selected);
+    list.children[selected].scrollIntoView({ block: "nearest" });
+  }
+
+  // 收起推薦清單
+  function hide() {
+    list.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+  }
+
+  // 把選到的地點填進輸入框，收起清單，然後做下一步
+  function choose() {
+    if (!list.hidden && suggestions.length > 0) input.value = graph.places[suggestions[selected]].name;
+    hide();
+    onEnter();
+  }
+
+  input.addEventListener("focus", update);
+  input.addEventListener("input", update);
+  input.addEventListener("blur", hide);
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (list.hidden) return update();
+      var step = event.key === "ArrowDown" ? 1 : -1;
+      selected = Math.max(0, Math.min(selected + step, suggestions.length - 1));
+      highlight();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      choose();
+    } else if (event.key === "Escape") {
+      hide();
+    }
   });
 }
 
-// 點地圖上的地點：還沒有起點、或起終點都選好了 → 當作新的起點；不然當作終點
+// 點地圖上的地點（和 Python 版 fill_from_map 一樣）
+// 起點還空著、或起終點都已經填好（要重新開始）→ 填進起點並清掉終點；只有起點填好 → 填進終點並直接找路線
 function pickFromMap(id) {
-  if (startSelect.value === "" || endSelect.value !== "") {
-    startSelect.value = id;
-    endSelect.value = "";
+  var name = graph.places[id].name;
+  if (startInput.value.trim() === "" || endInput.value.trim() !== "") {
+    startInput.value = name;
+    endInput.value = "";
     clearRoute();
     showMarker(id, "#2E7D32");
-    resultBox.innerHTML = '<p class="note">起點是「' + shortName(graph, id) + "」，再點一個地點當終點。</p>";
+    resultBox.innerHTML = '<p class="note">已選起點，請再點一個地點當終點。</p>';
   } else {
-    endSelect.value = id;
+    endInput.value = name;
     findRoute();
   }
 }
@@ -171,16 +227,18 @@ function showError(message) {
   resultBox.innerHTML = '<p class="error">' + message + "</p>";
 }
 
-// 按下「開始導航」：檢查選擇 → Dijkstra → 畫紅線 → 列出經過的地點、總距離、步行時間
+// 按下「開始導航」：檢查選擇並找路線（plan_route）→ 畫紅線 → 列出每一站、轉彎、方向、總距離、步行時間
 function findRoute() {
-  var start = startSelect.value, end = endSelect.value;
-  if (start === "") return showError("請選擇起點。");
-  if (end === "") return showError("請選擇終點。");
-  if (start === end) return showError("起點和終點是同一個地方。");
-
-  var answer = dijkstra(graph, start, end);
+  var answer = planRoute(
+    graph,
+    findPlace(graph, startInput.value),
+    findPlace(graph, endInput.value),
+    viaInput.value.trim() !== "",
+    findPlace(graph, viaInput.value)
+  );
   var path = answer[0], total = answer[1];
-  if (path.length === 0) return showError("這兩個地點之間沒有道路可以走到。");
+  if (answer[2] !== null) return showError(answer[2]);
+  var start = path[0], end = path[path.length - 1];
 
   // 把每一段道路的折線接起來；下一段的第一個點和上一段最後一個點一樣，所以跳過
   var points = [];
@@ -200,9 +258,15 @@ function findRoute() {
   // 步行時間：和 Python 版一樣，總距離 ÷ 70，取到小數第 1 位
   var html = '<div class="summary"><div><b>' + total + '</b><span>公尺</span></div>' +
              '<div><b>' + (total / WALK_SPEED).toFixed(1) + '</b><span>分鐘步行</span></div></div><ol class="trail">';
-  buildStops(graph, path).forEach(function (stop, index) {
-    // 每一站前面先寫「走幾公尺」，第一站是起點所以不用
-    if (index > 0) html += '<li class="leg">走 ' + stop[1] + " 公尺</li>";
+  var stops = buildStops(graph, path);
+  stops.forEach(function (stop, index) {
+    // 每一站前面先寫「怎麼轉、往哪個方向、走幾公尺」，第一站是起點所以不用（和 Python 版 show_result 一樣）
+    if (index > 0) {
+      var a = graph.places[stops[index - 1][0]], b = graph.places[stop[0]];
+      var arrow = directionText(a.x, a.y, b.x, b.y);
+      var turn = stop[2] === null ? "" : "<b>" + stop[2] + "</b>，";
+      html += '<li class="leg">' + turn + arrow + " 走 " + stop[1] + " 公尺</li>";
+    }
     html += '<li class="stop">' + shortName(graph, stop[0]) + "</li>";
   });
   resultBox.innerHTML = html + "</ol>";
@@ -217,13 +281,17 @@ fetch("map_data.json")
     drawRoads();
     routeLayer = el("g", {}, svg);   // 路線在道路上面、地點下面
     drawPlaces();
-    fillSelects();
+    // 起點選好跳到終點；途經點選好也跳到終點；終點選好直接找路線（和 Python 版一樣）
+    setupSearchBox(startInput, function () { endInput.focus(); });
+    setupSearchBox(viaInput, function () { endInput.focus(); });
+    setupSearchBox(endInput, findRoute);
     document.getElementById("go").addEventListener("click", findRoute);
+    // 交換起點和終點的文字；兩個都是有效地點就直接找回程（途經點不動）
     document.getElementById("swap").addEventListener("click", function () {
-      var t = startSelect.value;
-      startSelect.value = endSelect.value;
-      endSelect.value = t;
-      if (startSelect.value !== "" && endSelect.value !== "") findRoute();
+      var t = startInput.value;
+      startInput.value = endInput.value;
+      endInput.value = t;
+      if (findPlace(graph, startInput.value) !== null && findPlace(graph, endInput.value) !== null) findRoute();
     });
   })
   .catch(function (error) {

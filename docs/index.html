@@ -49,13 +49,22 @@
     .field { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 10px; margin-bottom: 10px; }
     .field .pin { width: 18px; height: 18px; border-radius: 50%; border: 3px solid #fff; }
     .field label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-    select {
+    .field .pin.via { width: 12px; height: 12px; margin-left: 3px; background: #fff; border: 0; }
+    /* 輸入框 + 下面的推薦清單 */
+    .combo { position: relative; }
+    .combo input {
       width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 8px;
-      border: 0; background: var(--sign-2); color: #fff; appearance: none; cursor: pointer;
-      background-image: linear-gradient(45deg, transparent 50%, #cfe0d3 50%), linear-gradient(135deg, #cfe0d3 50%, transparent 50%);
-      background-position: right 16px center, right 11px center; background-size: 5px 5px; background-repeat: no-repeat;
+      border: 0; background: var(--sign-2); color: #fff;
     }
-    select option { color: var(--ink); background: #fff; }
+    .combo input::placeholder { color: #9fbcaa; }
+    .combo ul {
+      position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px;
+      list-style: none; max-height: 280px; overflow-y: auto; background: #fff; color: var(--ink);
+      border-radius: 8px; box-shadow: 0 10px 24px rgba(20, 45, 33, .35);
+    }
+    .combo li { padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: .95rem; line-height: 1.45; }
+    .combo li[aria-selected="true"] { background: var(--sign); color: #fff; }
+    .hint { margin: 2px 0 0 32px; font-size: .82rem; color: #9fbcaa; line-height: 1.6; }
     .actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 16px; }
     button { font: inherit; font-size: 16px; border: 0; border-radius: 8px; padding: 11px 14px; cursor: pointer; }
     #go { background: #fff; color: var(--sign); font-weight: 900; letter-spacing: .1em; }
@@ -80,6 +89,7 @@
     .trail .stop:first-child::before { background: var(--start); color: #fff; }
     .trail .stop:last-child::before { background: var(--end); color: #fff; }
     .trail .leg { color: #cfe0d3; font-size: .85rem; padding: 2px 0 2px 2px; }
+    .trail .leg b { color: #fff; font-weight: 700; }
 
     /* 按下導航後路線從起點畫到終點；不喜歡動畫的人直接顯示整條線 */
     .route-line { animation: draw 1.1s ease-in-out forwards; }
@@ -146,14 +156,29 @@
         <h2>要去哪裡？</h2>
         <div class="field">
           <span class="pin" style="background:var(--start)"></span>
-          <label for="start">起點</label>
-          <select id="start"></select>
+          <div class="combo">
+            <label for="start">起點</label>
+            <input id="start" placeholder="起點" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="start-list" autocomplete="off">
+            <ul id="start-list" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="field">
+          <span class="pin via"></span>
+          <div class="combo">
+            <label for="via">途經點（可不填）</label>
+            <input id="via" placeholder="途經點（可不填）" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="via-list" autocomplete="off">
+            <ul id="via-list" role="listbox" hidden></ul>
+          </div>
         </div>
         <div class="field">
           <span class="pin" style="background:var(--end)"></span>
-          <label for="end">終點</label>
-          <select id="end"></select>
+          <div class="combo">
+            <label for="end">終點</label>
+            <input id="end" placeholder="終點" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="end-list" autocomplete="off">
+            <ul id="end-list" role="listbox" hidden></ul>
+          </div>
         </div>
+        <p class="hint">點輸入框或打幾個字就會推薦地點，例如「j」、「圖書」、「學生 停車」。↑↓ 選擇，Enter 確定。</p>
         <div class="actions">
           <button id="go">開始導航</button>
           <button id="swap" aria-label="交換起點和終點" title="交換起點和終點">⇅ 交換</button>

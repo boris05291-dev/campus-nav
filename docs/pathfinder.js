@@ -134,23 +134,128 @@ function shortName(graph, id) {
   return graph.places[id].name.split("（")[0];
 }
 
-// 把路線整理成站點：跳過路口，路口那幾段的距離加到下一站（對應 build_stops，但不算轉彎）
-// 回傳 [[地點 id, 離上一站幾公尺], ...]
+// 依照使用者打的文字推薦地點（路口不算），回傳排好順序的 id 清單（對應 graph.py 的 suggest）
+// 排序：代號完全一樣 → 代號或名稱開頭一樣 → 名稱裡有打的每一個字 → 同一級再照名稱排
+function suggest(graph, text) {
+  text = text.trim().toLowerCase();
+  var words = text.split(/\s+/).filter(function (w) { return w !== ""; });
+  var results = [];
+  for (var id in graph.places) {
+    var place = graph.places[id];
+    if (place.type === "junction") continue;
+    var name = place.name.toLowerCase();
+    var code = name.split(" ")[0];
+    var score;
+    if (text === "" || text === code) score = 0;
+    else if (code.indexOf(text) === 0 || name.indexOf(text) === 0) score = 1;
+    else if (words.every(function (w) { return name.indexOf(w) !== -1; })) score = 2;
+    else continue;
+    results.push([score, place.name, id]);
+  }
+  // 先比分數，一樣再比名稱、再比 id（和 Python 排 tuple 一樣）
+  results.sort(function (a, b) {
+    for (var i = 0; i < 3; i++) {
+      if (a[i] < b[i]) return -1;
+      if (a[i] > b[i]) return 1;
+    }
+    return 0;
+  });
+  return results.map(function (r) { return r[2]; });
+}
+
+// 用使用者打的文字找地點：名稱或代號完全一樣 → 推薦清單剛好只有一個；找不到或不只一個回傳 null（對應 find_place）
+function findPlace(graph, text) {
+  text = text.trim().toLowerCase();
+  if (text === "") return null;
+  for (var id in graph.places) {
+    var place = graph.places[id];
+    if (place.type === "junction") continue;
+    var name = place.name.toLowerCase();
+    if (text === name || text === name.split(" ")[0]) return id;
+  }
+  var ids = suggest(graph, text);
+  return ids.length === 1 ? ids[0] : null;
+}
+
+// 「start → via → end」：跑兩次 dijkstra 再接起來，任何一段走不到就回傳 [[], Infinity]（對應 route_via）
+function routeVia(graph, start, via, end) {
+  var a = dijkstra(graph, start, via), b = dijkstra(graph, via, end);
+  if (a[0].length === 0 || b[0].length === 0) return [[], Infinity];
+  // b 的第一個點就是 via，已經在 a 的最後面了，所以跳過
+  return [a[0].concat(b[0].slice(1)), a[1] + b[1]];
+}
+
+// 檢查使用者的選擇，沒問題才找路線，回傳 [路線, 總距離, 錯誤訊息]（對應 plan_route）
+// start、end、via 是地點 id（找不到時是 null）；hasVia：途經點有沒有填字
+function planRoute(graph, start, end, hasVia, via) {
+  if (start === null) return [[], null, "找不到起點。請從推薦清單選一個地點。"];
+  if (end === null) return [[], null, "找不到終點。請從推薦清單選一個地點。"];
+  if (!hasVia) via = null;
+  else if (via === null) return [[], null, "找不到途經點。請從推薦清單選一個地點，或把它清空。"];
+  if (start === end && (via === null || via === start)) return [[], null, "起點和終點是同一個地方。"];
+
+  var answer = via === null ? dijkstra(graph, start, end) : routeVia(graph, start, via, end);
+  if (answer[0].length === 0) return [[], null, "這兩個地點之間沒有道路可以走到。"];
+  return [answer[0], answer[1], null];
+}
+
+// 把路線整理成導航步驟：跳過路口，路口那幾段的距離加到下一站（對應 build_stops）
+// 回傳 [[地點 id, 離上一站幾公尺, 離開上一站時怎麼轉], ...]；第一段不用轉，是 null
 function buildStops(graph, path) {
-  var stops = [[path[0], 0]];
+  var stops = [[path[0], 0, null]];
   var walked = 0;
+  var lastStopIndex = 0;   // 上一站在 path 裡的位置
   for (var i = 0; i < path.length - 1; i++) {
     walked = walked + graph.edgeLookup[path[i] + "|" + path[i + 1]].distance;
     var next = path[i + 1];
     if (graph.places[next].type !== "junction") {
-      stops.push([next, walked]);
+      var turn = null;
+      if (lastStopIndex > 0) {
+        // 用「走進上一站的那條路」和「離開上一站的那條路」最靠近上一站的那一小段判斷轉彎
+        var hereId = path[lastStopIndex];
+        var roadIn = edgePoints(graph, path[lastStopIndex - 1], hereId);
+        var roadOut = edgePoints(graph, hereId, path[lastStopIndex + 1]);
+        var before = roadIn[roadIn.length - 2], after = roadOut[1];
+        var here = graph.places[hereId];
+        turn = turnText(before[0], before[1], here.x, here.y, after[0], after[1]);
+      }
+      stops.push([next, walked, turn]);
       walked = 0;
+      lastStopIndex = i + 1;
     }
   }
   return stops;
 }
 
+// 依照兩個地點在地圖上的位置，回傳「箭頭 + 往哪個方向」，例如「↗ 往右上」（對應 direction_text）
+// 畫面座標 y 往下變大，所以 dy 小於 0 是往上；一個方向比另一個大兩倍以上就只算那個方向
+function directionText(x1, y1, x2, y2) {
+  var dx = x2 - x1, dy = y2 - y1;
+  if (Math.abs(dx) > 2 * Math.abs(dy)) return dx > 0 ? "→ 往右" : "← 往左";
+  if (Math.abs(dy) > 2 * Math.abs(dx)) return dy < 0 ? "↑ 往上" : "↓ 往下";
+  if (dx > 0 && dy < 0) return "↗ 往右上";
+  if (dx < 0 && dy < 0) return "↖ 往左上";
+  if (dx > 0) return "↘ 往右下";
+  return "↙ 往左下";
+}
+
+// 從 (x1,y1) 走到 (x2,y2)，接著要去 (x3,y3)：在 (x2,y2) 要直走、左轉、右轉還是迴轉（對應 turn_text）
+function turnText(x1, y1, x2, y2, x3, y3) {
+  // 換算成角度的方式和 Python 的 math.degrees 一樣（除以 π/180），結果才會完全相同
+  var angleIn = Math.atan2(y2 - y1, x2 - x1) / (Math.PI / 180);
+  var angleOut = Math.atan2(y3 - y2, x3 - x2) / (Math.PI / 180);
+  var turn = angleOut - angleIn;
+  while (turn > 180) turn = turn - 360;
+  while (turn <= -180) turn = turn + 360;
+  if (Math.abs(turn) < 30) return "直走";
+  if (Math.abs(turn) > 150) return "迴轉";
+  return turn > 0 ? "右轉" : "左轉";
+}
+
 // 在 Node.js 裡執行時，把函式匯出給比對程式用；在瀏覽器裡沒有 module，會直接跳過
 if (typeof module !== "undefined") {
-  module.exports = { buildGraph: buildGraph, dijkstra: dijkstra, buildStops: buildStops };
+  module.exports = {
+    buildGraph: buildGraph, dijkstra: dijkstra, buildStops: buildStops, suggest: suggest,
+    findPlace: findPlace, planRoute: planRoute, directionText: directionText
+  };
 }
