@@ -9,7 +9,7 @@ MAP_DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "map_data.json")
 
 # ===== 視窗大小 =====
 WINDOW_TITLE = "校園最短路徑導航"
-PANEL_WIDTH = 280     # 右邊控制面板的寬
+PANEL_WIDTH = 340     # 右邊控制面板的寬（字放大了，面板也跟著加寬）
 
 # 左邊地圖畫布的大小；地圖會自動縮放、置中放進這個範圍
 MAP_WIDTH = 1170
@@ -58,10 +58,31 @@ START_COLOR = "#2E7D32"       # 起點標記（綠）
 END_COLOR = "#C62828"         # 終點標記（紅）
 MARKER_RADIUS = 9             # 起點、終點標記的半徑
 
-# ===== 步行 =====
-WALK_SPEED = 70               # 走路速度：每分鐘 70 公尺（約時速 4.2 公里），比 Google 的 80 慢一點，算進爬坡、等人的時間
+LABEL_BG_COLOR = "#FFFFFF"    # 地圖上地點名稱的白底，名稱才不會和綠地、樹混在一起
+# 比較三種演算法時，三條路線各用一種顏色（Dijkstra 紅、A* 藍、Bellman-Ford 橘）
+COMPARE_COLORS = ["#E53935", "#1E63C8", "#F29D0E"]
 
-# ===== 字型（微軟正黑體，Windows 內建，中文顯示比較清楚）=====
-TITLE_FONT = ("Microsoft JhengHei", 14, "bold")
-LABEL_FONT = ("Microsoft JhengHei", 9)
-TEXT_FONT = ("Microsoft JhengHei", 10)
+# ===== 步行 =====
+WALK_SPEED = 70               # 走路速度：每分鐘 70 公尺（約時速 4.2 公里），比 Google 的 80 慢一點，算進等人的時間
+
+# ===== 坡度 =====
+# 上坡每爬 1 公尺，當作平地多走幾公尺（奈史密斯規則：爬 600 公尺 ≈ 走 5 公里，約 8 倍）
+# 「最省力路線」用它算花費，步行時間也會把爬坡多花的時間算進去
+CLIMB_FACTOR = 8
+# 坡度超過這個百分比，結果區會標示「陡」
+STEEP_SLOPE = 8
+
+# ===== 字型 =====
+# 依序找電腦裡有沒有這些字型，用第一個找到的（app.py 的 choose_font 會處理）
+# 微軟正黑體是 Windows 內建；Mac 用蘋方；Linux 常見的是 Noto Sans CJK 或文泉驛
+FONT_CHOICES = ["Microsoft JhengHei UI", "Microsoft JhengHei", "PingFang TC",
+                "Noto Sans CJK TC", "Noto Sans TC", "WenQuanYi Zen Hei"]
+# 字型大小（點）；原本 9、10 在投影機和高解析度螢幕上太小，放大一些
+TITLE_SIZE = 17
+LABEL_SIZE = 11
+TEXT_SIZE = 12
+# 下面三個是預設值，程式啟動時 choose_font 會換成上面找到的字型
+TITLE_FONT = ("Microsoft JhengHei", TITLE_SIZE, "bold")
+LABEL_FONT = ("Microsoft JhengHei", LABEL_SIZE)
+TEXT_FONT = ("Microsoft JhengHei", TEXT_SIZE)
+BOLD_FONT = ("Microsoft JhengHei", TEXT_SIZE, "bold")

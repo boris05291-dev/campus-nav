@@ -1,8 +1,9 @@
 # ui/side_panel.py
-# 負責：右邊 280 寬的控制面板。
+# 負責：右邊的控制面板（寬度見 config.PANEL_WIDTH）。
 # - 讓使用者輸入起點和終點，打字時會自動推薦地點
-# - 提供「找路線」按鈕
-# - 顯示結果：經過的地點、總距離、預估步行時間
+# - 「最省力路線（避開上坡）」勾選框
+# - 提供「找路線」和「比較三種演算法」按鈕
+# - 顯示結果：經過的地點、總距離、上下坡、預估步行時間；或三種演算法的比較
 
 import tkinter as tk
 
@@ -138,18 +139,20 @@ class SearchBox:
 
 class SidePanel(tk.Frame):
 
-    # 建立面板：標題、起點終點輸入框、找路線按鈕、結果區
-    # on_search 是按下「找路線」時要呼叫的函式（由 app.py 傳進來）
-    def __init__(self, parent, graph, on_search):
+    # 建立面板：標題、起點終點輸入框、按鈕、結果區
+    # on_search 是按下「找路線」時要呼叫的函式，on_compare 是按下「比較三種演算法」時要呼叫的函式
+    # has_elevation：地圖資料有沒有高度，沒有的話在勾選框旁邊提醒（都由 app.py 傳進來）
+    def __init__(self, parent, graph, on_search, on_compare, has_elevation):
         super().__init__(
             parent,
             width=config.PANEL_WIDTH,
             bg=config.PANEL_BG_COLOR,
         )
-        # 讓面板維持 280 寬，不會因為裡面的元件變大變小（高度跟著地圖）
+        # 讓面板維持固定寬度，不會因為裡面的元件變大變小（高度跟著地圖）
         self.pack_propagate(False)
         self.graph = graph
         self.on_search = on_search
+        self.has_elevation = has_elevation
 
         title = tk.Label(
             self,
@@ -177,11 +180,31 @@ class SidePanel(tk.Frame):
         )
         hint.pack(fill=tk.X, padx=16, pady=(6, 0))
 
-        swap_button = tk.Button(self, text="⇅ 交換起點和終點", font=config.TEXT_FONT, command=self.swap)
-        swap_button.pack(fill=tk.X, padx=16, pady=(12, 0))
+        # 勾起來就找「最省力」的路：上坡會被當成比較遠（見 core/graph.py 的 step_cost）
+        slope_text = "最省力路線（避開上坡）"
+        if not has_elevation:
+            slope_text = slope_text + "\n※ 地圖還沒有高度資料，目前都當平路"
+        self.slope_choice = tk.BooleanVar(value=False)
+        slope_box = tk.Checkbutton(
+            self,
+            text=slope_text,
+            variable=self.slope_choice,
+            font=config.TEXT_FONT,
+            bg=config.PANEL_BG_COLOR,
+            fg=config.TEXT_COLOR,
+            justify=tk.LEFT,
+            anchor="w",
+        )
+        slope_box.pack(fill=tk.X, padx=12, pady=(10, 0))
 
-        search_button = tk.Button(self, text="找路線", font=config.TEXT_FONT, command=on_search)
-        search_button.pack(fill=tk.X, padx=16, pady=(8, 8))
+        swap_button = tk.Button(self, text="⇅ 交換起點和終點", font=config.TEXT_FONT, command=self.swap)
+        swap_button.pack(fill=tk.X, padx=16, pady=(8, 0))
+
+        search_button = tk.Button(self, text="找路線", font=config.BOLD_FONT, command=on_search)
+        search_button.pack(fill=tk.X, padx=16, pady=(8, 0))
+
+        compare_button = tk.Button(self, text="比較三種演算法", font=config.TEXT_FONT, command=on_compare)
+        compare_button.pack(fill=tk.X, padx=16, pady=(8, 8))
 
         # 路線很長時結果會超出面板，加一條捲軸
         scrollbar = tk.Scrollbar(self)
@@ -197,9 +220,14 @@ class SidePanel(tk.Frame):
             relief=tk.FLAT,
             state="disabled",
             yscrollcommand=scrollbar.set,
+            spacing1=2,    # 每行上面多留 2 像素，行距大一點比較好讀
         )
         self.result_text.pack(fill=tk.BOTH, expand=True, padx=(16, 0), pady=(0, 16))
         scrollbar.config(command=self.result_text.yview)
+        # 比較演算法時，三種演算法的名稱用和地圖上路線一樣的顏色、粗體
+        for i in range(len(config.COMPARE_COLORS)):
+            self.result_text.tag_config("color" + str(i), foreground=config.COMPARE_COLORS[i], font=config.BOLD_FONT)
+        self.result_text.tag_config("bold", font=config.BOLD_FONT)
 
     # 回傳起點 id；找不到、或打的字符合好幾個地點，就回傳 None
     def get_start(self):
@@ -208,6 +236,10 @@ class SidePanel(tk.Frame):
     # 回傳終點 id；找不到、或打的字符合好幾個地點，就回傳 None
     def get_end(self):
         return self.end.get_place_id()
+
+    # 「最省力路線」有沒有勾起來
+    def use_slope(self):
+        return self.slope_choice.get()
 
     # 途經點輸入框有沒有填東西（空白不算）
     def has_via(self):
@@ -253,27 +285,109 @@ class SidePanel(tk.Frame):
     # 把路線結果整理成文字顯示出來
     # stops 是 [(地點 id, 離上一站幾公尺, 離開上一站時怎麼轉), ...]，只有建築和設施，路口已經跳過
     # 「怎麼轉」是 turn_text 的結果，例如「右轉」；第一段沒有轉彎，是 None
-    # total 是總距離，minutes 是步行分鐘數
-    def show_result(self, stops, total, minutes):
+    # distance 是實際總距離，minutes 是步行分鐘數，up、down 是總共上坡、下坡幾公尺
+    def show_result(self, stops, distance, minutes, up, down):
         # 總距離和步行時間放最上面，路線很長時也不用往下捲才看得到
         lines = []
-        lines.append("總距離：" + str(total) + " 公尺")
+        if self.use_slope():
+            lines.append("【最省力路線】")
+        lines.append("總距離：" + str(distance) + " 公尺")
+        if self.has_elevation:
+            lines.append("上坡 " + str(round(up, 1)) + " 公尺、下坡 " + str(round(down, 1)) + " 公尺")
         lines.append("步行時間：約 " + str(round(minutes, 1)) + " 分鐘")
         lines.append("")
         number = 1
         previous = None
-        for place_id, distance, turn in stops:
+        for place_id, step_distance, turn in stops:
             # 第一站是起點，沒有「離上一站」的距離；轉彎和方向寫在兩站之間
             if previous is not None:
                 a = self.graph.places[previous]
                 b = self.graph.places[place_id]
                 arrow = direction_text(a["x"], a["y"], b["x"], b["y"])
+                step = arrow + " 走 " + str(step_distance) + " 公尺" + self.slope_note(previous, place_id, step_distance)
                 if turn is None:
-                    lines.append("    " + arrow + " 走 " + str(distance) + " 公尺")
+                    lines.append("    " + step)
                 else:
-                    lines.append("    " + turn + "，" + arrow + " 走 " + str(distance) + " 公尺")
+                    lines.append("    " + turn + "，" + step)
             lines.append(str(number) + ". " + self.graph.short_name(place_id))
             previous = place_id
             number = number + 1
         self.show_message("\n".join(lines))
 
+    # 兩站之間的坡度說明，例如「（上坡 4%）」、「（下坡 9%，陡）」；沒有高度資料或幾乎平的就回傳空字串
+    # 用兩站的高度差 ÷ 兩站之間的距離，是這一段的平均坡度
+    def slope_note(self, a, b, distance):
+        if distance == 0:
+            return ""
+        percent = self.graph.climb(a, b) / distance * 100
+        if abs(percent) < 1:
+            return ""
+        if percent > 0:
+            note = "上坡 " + str(round(percent)) + "%"
+        else:
+            note = "下坡 " + str(round(-percent)) + "%"
+        if abs(percent) >= config.STEEP_SLOPE:
+            note = note + "，陡"
+        return "（" + note + "）"
+
+    # 顯示三種演算法的比較結果
+    # results 是 core/route.py compare_algorithms 回傳的清單；place_count、road_count 是地圖有幾個地點、幾條路
+    def show_comparison(self, results, place_count, road_count):
+        self.result_text.config(state="normal")
+        self.result_text.delete("1.0", tk.END)
+
+        self.result_text.insert(tk.END, "三種演算法比較\n", "bold")
+        self.result_text.insert(tk.END, "地圖共 " + str(place_count) + " 個地點、" + str(road_count) + " 條路\n")
+        if self.use_slope():
+            self.result_text.insert(tk.END, "（目前比較的是「最省力路線」）\n")
+        self.result_text.insert(tk.END, "\n")
+
+        for i in range(len(results)):
+            result = results[i]
+            # 名稱用地圖上路線的顏色
+            self.result_text.insert(tk.END, "■ " + result["name"] + "\n", "color" + str(i))
+            lines = []
+            lines.append("  路線長度：" + str(result["distance"]) + " 公尺")
+            if result["name"] == "Bellman-Ford":
+                lines.append("  跑了 " + str(result["visited"]) + " 輪")
+            else:
+                lines.append("  處理了 " + str(result["visited"]) + " 個地點")
+            lines.append("  檢查道路 " + str(result["checked"]) + " 次")
+            lines.append("  平均每次 " + str(round(result["ms"], 3)) + " 毫秒")
+            self.result_text.insert(tk.END, "\n".join(lines) + "\n\n")
+
+        self.result_text.insert(tk.END, "結論\n", "bold")
+        self.result_text.insert(tk.END, self.comparison_summary(results))
+        self.result_text.config(state="disabled")
+
+    # 依照比較結果寫幾句結論：路線一不一樣、誰檢查最少道路、誰最快
+    def comparison_summary(self, results):
+        lines = []
+        same = True
+        for result in results:
+            if result["distance"] != results[0]["distance"]:
+                same = False
+        if same:
+            lines.append("三種演算法找到的路線一樣長，都是最短路線；地圖上三色條紋疊在一起。")
+        else:
+            lines.append("路線長度不一樣，請檢查程式！（正確的話三種應該一樣長）")
+
+        least = results[0]
+        fastest = results[0]
+        for result in results:
+            if result["checked"] < least["checked"]:
+                least = result
+            if result["ms"] < fastest["ms"]:
+                fastest = result
+        most = results[0]
+        for result in results:
+            if result["checked"] > most["checked"]:
+                most = result
+        lines.append("檢查道路最少的是 " + least["name"] + "（" + str(least["checked"]) + " 次），最多的是 "
+                     + most["name"] + "（" + str(most["checked"]) + " 次）。")
+        lines.append("跑最快的是 " + fastest["name"] + "。")
+        lines.append("")
+        lines.append("‧ Dijkstra：每次從離起點最近的地點往外擴，到終點就停。")
+        lines.append("‧ A*：多參考「離終點的直線距離」，往終點方向優先找，通常檢查得最少。")
+        lines.append("‧ Bellman-Ford：每一輪都把全部道路檢查一遍，工作量最大，但能處理負的距離。")
+        return "\n".join(lines)

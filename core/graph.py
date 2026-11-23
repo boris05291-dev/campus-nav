@@ -11,8 +11,14 @@
 # }
 # 程式裡一律用 id 代表地點，name 只拿來顯示。
 # x、y 和 path 都是地圖上的像素座標；path 是沿著道路畫的折線（從 from 畫到 to）。
+# 地點還可以有這些欄位（可以不填）：
+# - "elevation"：海拔高度（公尺），用來算坡度；沒填的地點當作和旁邊一樣高（平路）
+# - "lat"、"lng"：經緯度，A* 演算法用它估計「離終點的直線距離」；沒填的話估計值當作 0
 
 import json
+import math
+
+import config
 
 
 class CampusGraph:
@@ -43,6 +49,10 @@ class CampusGraph:
                 "type": node["type"],
                 "x": node["x"],
                 "y": node["y"],
+                # 沒填的欄位存 None，代表「不知道」
+                "elevation": node.get("elevation"),
+                "lat": node.get("lat"),
+                "lng": node.get("lng"),
             }
             self.adjacency[place_id] = []
 
@@ -94,6 +104,51 @@ class CampusGraph:
         if edge["from"] == a:
             return edge["path"]
         return list(reversed(edge["path"]))
+
+    # 從 a 走到 b 要爬升幾公尺：往上是正的、往下是負的
+    # 只要有一邊沒填高度，就不知道坡度，當作平路（0）
+    # 用 .get 是因為測試會自己手動加地點，那些地點沒有 elevation 這個欄位
+    def climb(self, a, b):
+        height_a = self.places[a].get("elevation")
+        height_b = self.places[b].get("elevation")
+        if height_a is None or height_b is None:
+            return 0
+        return height_b - height_a
+
+    # 從 a 走到 b 的坡度（百分比）：爬升高度 ÷ 道路長度 × 100，例如 5 代表每走 100 公尺爬高 5 公尺
+    def slope_percent(self, a, b):
+        distance = self.distance_between(a, b)
+        if distance == 0:
+            return 0
+        return self.climb(a, b) / distance * 100
+
+    # 走一段路（從 a 到 b，長度 distance）的「花費」，演算法用它當權重
+    # use_slope 是 False：花費就是距離
+    # use_slope 是 True：上坡每爬 1 公尺，當作多走 config.CLIMB_FACTOR 公尺；下坡不加
+    # （登山常用的「奈史密斯規則」：爬高 1 公尺大約和平地走 8 公尺一樣累）
+    def step_cost(self, a, b, distance, use_slope):
+        if not use_slope:
+            return distance
+        up = self.climb(a, b)
+        if up < 0:
+            up = 0
+        return distance + up * config.CLIMB_FACTOR
+
+    # 用經緯度算 a、b 兩個地點的直線距離（公尺），公式是球面上兩點距離的 haversine 公式
+    # 任何一個地點沒有經緯度，就回傳 0（A* 會變得和 Dijkstra 一樣，但答案還是對的）
+    def straight_distance(self, a, b):
+        place_a = self.places[a]
+        place_b = self.places[b]
+        if place_a.get("lat") is None or place_b.get("lat") is None:
+            return 0
+        earth_radius = 6371000
+        lat1 = math.radians(place_a["lat"])
+        lat2 = math.radians(place_b["lat"])
+        d_lat = lat2 - lat1
+        d_lng = math.radians(place_b["lng"] - place_a["lng"])
+        h = math.sin(d_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d_lng / 2) ** 2
+        # 經緯度本身有一點誤差，乘 0.9 讓估計值保守一點，才不會比真正的道路還長
+        return 2 * earth_radius * math.asin(math.sqrt(h)) * 0.9
 
     # 用使用者打的文字找地點（路口不算），大小寫不分
     # 找的順序：完整名稱或代號（例如 J、6、B1/B2）完全一樣 → 推薦清單（suggest）剛好只有一個
