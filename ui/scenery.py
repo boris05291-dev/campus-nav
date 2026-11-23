@@ -74,9 +74,14 @@ COURTS = [
     ]),
 ]
 
-# 1 操場（OpenStreetMap 的足球場），畫成紅色跑道圍著綠色草地
-TRACK = [
-    (1073, 435), (1077, 517), (1018, 498), (922, 471), (922, 393),
+# 1 操場（OpenStreetMap 的跑道）：兩頭是圓弧的橢圓形，外圈是跑道外緣，內圈是中間的草地
+TRACK_OUTER = [
+    (1075, 421), (1091, 434), (1103, 452), (1110, 471), (1111, 490), (1108, 509), (1094, 529), (1080, 533), (914, 487),
+    (899, 472), (889, 453), (883, 433), (883, 414), (887, 396), (895, 386), (913, 379), (927, 380),
+]
+TRACK_INNER = [
+    (922, 471), (911, 459), (903, 445), (901, 429), (901, 418), (905, 404), (910, 396), (922, 393), (1073, 435),
+    (1084, 449), (1089, 462), (1093, 479), (1093, 492), (1090, 502), (1085, 511), (1077, 517),
 ]
 
 # OpenStreetMap 沒有畫的停車場，照原本的校園地圖畫方塊：(左, 上, 右, 下, 顏色)
@@ -176,9 +181,11 @@ def draw_ground(map_view):
     for left, top, right, bottom, color in FIELDS:
         draw_box(map_view, left, top, right, bottom, color, "#B8A39C")
 
-    # 1 操場：紅色跑道（粗外框）圍著綠色草地
-    map_view.create_polygon(map_view.to_canvas_points(TRACK), fill="#8FBF6A",
-                            outline="#C8624F", width=5, tags="scenery")
+    # 1 操場：先畫紅色的外圈（跑道），再把中間的草地蓋上去
+    map_view.create_polygon(map_view.to_canvas_points(TRACK_OUTER), fill="#C8624F",
+                            outline="", tags="scenery")
+    map_view.create_polygon(map_view.to_canvas_points(TRACK_INNER), fill="#8FBF6A",
+                            outline="", tags="scenery")
 
     for color, court in COURTS:
         map_view.create_polygon(map_view.to_canvas_points(court),
