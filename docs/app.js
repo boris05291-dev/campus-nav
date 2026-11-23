@@ -82,7 +82,7 @@ function overlap(a, b) {
 }
 
 // 畫可以選的地點（圓點 + 名稱），點下去就選成起點或終點
-// 名稱依序試「下、右、左、上」，用第一個不會蓋到別的名稱或圓點的位置（和 Python 版一樣）
+// 名稱依序試「下、右、左、上」，都不行再試「更下面、更上面」，用第一個不會蓋到別的名稱或圓點的位置
 function drawPlaces() {
   var ids = Object.keys(graph.places).filter(function (id) { return graph.places[id].type !== "junction"; });
   var taken = [];   // 已經被圓點或名稱佔用的範圍
@@ -106,7 +106,7 @@ function drawPlaces() {
     var p = graph.places[id];
     var text = el("text", {}, groups[id]);
     text.textContent = shortName(graph, id).split("、")[0];
-    var positions = [[0, 9, "middle", "hanging"], [9, 0, "start", "middle"], [-9, 0, "end", "middle"], [0, -9, "middle", "auto"]];
+    var positions = [[0, 9, "middle", "hanging"], [9, 0, "start", "middle"], [-9, 0, "end", "middle"], [0, -9, "middle", "auto"], [0, 28, "middle", "hanging"], [0, -28, "middle", "auto"]];
     for (var i = 0; i <= positions.length; i++) {
       var pos = positions[i % positions.length];   // 四個都重疊就回到「下面」
       text.setAttribute("x", p.x + pos[0]);
@@ -147,7 +147,7 @@ function pickFromMap(id) {
     endSelect.value = "";
     clearRoute();
     showMarker(id, "#2E7D32");
-    resultBox.innerHTML = "<p>起點：" + shortName(graph, id) + "<br>請再點一個地點當終點。</p>";
+    resultBox.innerHTML = '<p class="note">起點是「' + shortName(graph, id) + "」，再點一個地點當終點。</p>";
   } else {
     endSelect.value = id;
     findRoute();
@@ -189,16 +189,21 @@ function findRoute() {
     points = points.concat(i > 0 ? segment.slice(1) : segment);
   }
   clearRoute();
-  el("polyline", { points: pointsText(points), fill: "none", stroke: "#E53935", "stroke-width": 6, "stroke-linecap": "round", "stroke-linejoin": "round" }, routeLayer);
+  var line = el("polyline", { "class": "route-line", points: pointsText(points), fill: "none", stroke: "#D7262B", "stroke-width": 6, "stroke-linecap": "round", "stroke-linejoin": "round" }, routeLayer);
+  // 路線從起點「畫」到終點：先把虛線間隔設成整條線的長度，再讓 CSS 動畫把它收回來
+  var length = line.getTotalLength();
+  line.style.strokeDasharray = length;
+  line.style.strokeDashoffset = length;
   showMarker(start, "#2E7D32");
   showMarker(end, "#C62828");
 
   // 步行時間：和 Python 版一樣，總距離 ÷ 70，取到小數第 1 位
-  var html = '<div class="summary">總距離：' + total + " 公尺<br>步行時間：約 " + (total / WALK_SPEED).toFixed(1) + " 分鐘</div><ol>";
+  var html = '<div class="summary"><div><b>' + total + '</b><span>公尺</span></div>' +
+             '<div><b>' + (total / WALK_SPEED).toFixed(1) + '</b><span>分鐘步行</span></div></div><ol class="trail">';
   buildStops(graph, path).forEach(function (stop, index) {
-    html += "<li>" + shortName(graph, stop[0]);
-    if (index > 0) html += " <small>（走 " + stop[1] + " 公尺）</small>";
-    html += "</li>";
+    // 每一站前面先寫「走幾公尺」，第一站是起點所以不用
+    if (index > 0) html += '<li class="leg">走 ' + stop[1] + " 公尺</li>";
+    html += '<li class="stop">' + shortName(graph, stop[0]) + "</li>";
   });
   resultBox.innerHTML = html + "</ol>";
 }
