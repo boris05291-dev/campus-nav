@@ -3,6 +3,7 @@
 # - 用灰線畫出所有道路（沿著 path 折線），在可選的地點畫上彩色圓點和名稱
 # - 滑鼠移到地點上會顯示全名，點一下會交給 on_place_click 處理（填進起點或終點），左下角有圖例
 # - 把找到的最短路線沿著道路畫出來，並標出起點、終點
+# - 比較三種演算法時，把三條路線用不同顏色疊在一起畫
 # 沒有用背景圖：綠地、湖、建築、樹（ui/scenery.py）和道路、地點都是程式自己畫的
 
 import tkinter as tk
@@ -159,10 +160,11 @@ class MapView(tk.Canvas):
                 tags=("place", "label"),
             )
             if not self.overlaps_others(label):
+                self.add_label_background(label)
                 return label
             self.delete(label)
 
-        return self.create_text(
+        label = self.create_text(
             x, y + r + 2,
             text=text,
             anchor=tk.N,
@@ -170,6 +172,20 @@ class MapView(tk.Canvas):
             font=config.LABEL_FONT,
             tags=("place", "label"),
         )
+        self.add_label_background(label)
+        return label
+
+    # 在名稱後面墊一塊白底，字才不會壓在綠地、樹或道路上看不清楚
+    def add_label_background(self, label):
+        left, top, right, bottom = self.bbox(label)
+        background = self.create_rectangle(
+            left - 2, top, right + 2, bottom,
+            fill=config.LABEL_BG_COLOR,
+            outline="",
+            tags=("place", "labelbg"),
+        )
+        # 白底是後畫的，會蓋住字，所以把字移回上面
+        self.tag_raise(label, background)
 
     # 檢查某個名稱有沒有蓋到別的名稱或圓點（道路線不算）
     def overlaps_others(self, item):
@@ -188,9 +204,13 @@ class MapView(tk.Canvas):
         self.config(cursor="hand2")
         place = self.graph.places[place_id]
         x, y = self.to_canvas(place["x"], place["y"])
+        info = place["name"]
+        # 有高度資料的話，順便顯示海拔
+        if place["elevation"] is not None:
+            info = info + "\n海拔 " + str(place["elevation"]) + " 公尺"
         text = self.create_text(
             x + 12, y - 12,
-            text=place["name"],
+            text=info,
             anchor=tk.SW,
             fill=config.TEXT_COLOR,
             font=config.TEXT_FONT,
@@ -223,22 +243,62 @@ class MapView(tk.Canvas):
         self.config(cursor="")
 
     # 在左下角畫圖例，說明每種顏色代表什麼
+    # 先把每一行畫出來，再量所有字佔多大，畫一個剛好包住的白框，字放大或縮小都不會超出框
     def draw_legend(self):
-        x = 20
-        y = config.MAP_HEIGHT - 20 - 22 * (len(config.PLACE_COLORS) + 1)
         r = config.PLACE_RADIUS
-        # 白色底框，圖例才不會和綠地、樹混在一起
+        # 每行的高度跟著字的大小走：量一個字有多高，再多留一點空隙
+        row_height = self.text_height(config.LABEL_FONT) + 8
         rows = len(config.PLACE_COLORS) + 1
-        self.create_rectangle(x - 14, y - 16, x + 170, y + 22 * (rows - 1) + 14,
-                              fill=config.LEGEND_BG_COLOR, outline=config.INFO_BORDER_COLOR)
+        x = 24
+        y = config.MAP_HEIGHT - 24 - row_height * (rows - 1)
+
         for place_type, color in config.PLACE_COLORS.items():
-            self.create_oval(x - r, y - r, x + r, y + r, fill=color, outline=config.PLACE_OUTLINE, width=2)
-            self.create_text(x + 14, y, text=config.PLACE_TYPE_NAMES[place_type], anchor=tk.W,
-                             fill=config.TEXT_COLOR, font=config.LABEL_FONT)
-            y = y + 22
+            self.create_oval(x - r, y - r, x + r, y + r, fill=color, outline=config.PLACE_OUTLINE,
+                             width=2, tags="legend")
+            self.create_text(x + r + 8, y, text=config.PLACE_TYPE_NAMES[place_type], anchor=tk.W,
+                             fill=config.TEXT_COLOR, font=config.LABEL_FONT, tags="legend")
+            y = y + row_height
         # 最後一行說明紅線
-        self.create_line(x - 8, y, x + 8, y, fill=config.ROUTE_COLOR, width=config.ROUTE_WIDTH, capstyle=tk.ROUND)
-        self.create_text(x + 14, y, text="找到的路線", anchor=tk.W, fill=config.TEXT_COLOR, font=config.LABEL_FONT)
+        self.create_line(x - 8, y, x + 8, y, fill=config.ROUTE_COLOR, width=config.ROUTE_WIDTH,
+                         capstyle=tk.ROUND, tags="legend")
+        self.create_text(x + r + 8, y, text="找到的路線", anchor=tk.W, fill=config.TEXT_COLOR,
+                         font=config.LABEL_FONT, tags="legend")
+
+        left, top, right, bottom = self.bbox("legend")
+        box = self.create_rectangle(left - 10, top - 8, right + 10, bottom + 8,
+                                    fill=config.LEGEND_BG_COLOR, outline=config.INFO_BORDER_COLOR)
+        # 白框是最後畫的，會蓋住圖例，所以把它移到圖例下面
+        self.tag_lower(box, "legend")
+
+    # 量某個字型一行字有多高（像素）：先畫一個字、量完再刪掉
+    def text_height(self, font):
+        item = self.create_text(0, 0, text="字", font=font)
+        left, top, right, bottom = self.bbox(item)
+        self.delete(item)
+        return bottom - top
+
+    # 把路線經過的每一段道路折線接起來，回傳 [[x, y], [x, y], ...]
+    # 下一段的第一個點和上一段的最後一個點相同，所以跳過
+    def route_points(self, path):
+        points = []
+        for i in range(len(path) - 1):
+            segment = self.graph.edge_points(path[i], path[i + 1])
+            if i > 0:
+                segment = segment[1:]
+            points = points + segment
+        return points
+
+    # 沿著道路畫一條路線（顏色、粗細可以指定），放在地點和名稱下面，名稱才不會被擋住
+    def draw_line_on_roads(self, path, color, width):
+        self.create_line(
+            self.to_canvas_points(self.route_points(path)),
+            fill=color,
+            width=width,
+            capstyle=tk.ROUND,
+            joinstyle=tk.ROUND,
+            tags="route",
+        )
+        self.tag_lower("route", "place")
 
     # 沿著道路的折線畫出整條路線，再在起點、終點畫上標記；舊的路線會先清掉
     def draw_route(self, path):
@@ -246,28 +306,24 @@ class MapView(tk.Canvas):
         # create_line 至少要兩個點，起點等於終點時就不畫
         if len(path) < 2:
             return
-
-        # 把每一段道路的折線接起來；下一段的第一個點和上一段的最後一個點相同，所以跳過
-        route_points = []
-        for i in range(len(path) - 1):
-            segment = self.graph.edge_points(path[i], path[i + 1])
-            if i > 0:
-                segment = segment[1:]
-            route_points = route_points + segment
-
-        self.create_line(
-            self.to_canvas_points(route_points),
-            fill=config.ROUTE_COLOR,
-            width=config.ROUTE_WIDTH,
-            capstyle=tk.ROUND,
-            joinstyle=tk.ROUND,
-            tags="route",
-        )
-        # 路線蓋在道路上面，但在地點和名稱下面，名稱才不會被擋住
-        self.tag_lower("route", "place")
+        self.draw_line_on_roads(path, config.ROUTE_COLOR, config.ROUTE_WIDTH)
         # 起點、終點標記要在最上面，所以最後才畫
         self.draw_marker(path[0], config.START_COLOR)
         self.draw_marker(path[-1], config.END_COLOR)
+
+    # 比較三種演算法時用：把好幾條路線疊在一起畫，每條用不同顏色
+    # 先畫的線最粗、後畫的最細，三條路線一樣時會變成一條「三色條紋」，不一樣時就分得出來
+    def draw_compare_routes(self, paths, colors):
+        self.clear_route()
+        count = len(paths)
+        for i in range(count):
+            if len(paths[i]) < 2:
+                continue
+            width = config.ROUTE_WIDTH + (count - 1 - i) * 5
+            self.draw_line_on_roads(paths[i], colors[i], width)
+        if len(paths[0]) >= 2:
+            self.draw_marker(paths[0][0], config.START_COLOR)
+            self.draw_marker(paths[0][-1], config.END_COLOR)
 
     # 在某個地點畫一個有白邊的大圓點，用來標示起點或終點
     def draw_marker(self, place_id, color):

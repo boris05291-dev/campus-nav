@@ -5,20 +5,37 @@
 # - build_stops：跳過路口，算出每一站離上一站幾公尺、要怎麼轉
 # - direction_text：兩個地點之間是往哪個方向走
 # - turn_text：走到某個地點時要左轉、右轉、直走還是迴轉
+# - route_summary：整條路線的實際距離、總共上坡幾公尺、下坡幾公尺
+# - compare_algorithms：同一段路用 Dijkstra、A*、Bellman-Ford 各找一次，比較它們的差別
 # 這裡只做計算，不碰 tkinter，所以可以直接用 unittest 測試。
 
 import math
+import time
 
-from core.pathfinder import dijkstra
+from core.pathfinder import a_star, bellman_ford, dijkstra
+
+# 要比較的三種演算法：(顯示的名稱, 函式)
+ALGORITHMS = [
+    ("Dijkstra", dijkstra),
+    ("A*", a_star),
+    ("Bellman-Ford", bellman_ford),
+]
 
 
 # 找出「start → via → end」的路線，回傳 (路線, 總距離)，格式和 dijkstra 一樣
 # 做法：跑兩次 dijkstra（start → via、via → end），再把兩段接起來
 # 任何一段走不到，就回傳 ([], float("inf"))
 # via 和 start 或 end 一樣也沒關係：dijkstra 會回傳 ([via], 0)，接起來就等於沒有途經點
-def route_via(graph, start, via, end):
-    path1, distance1 = dijkstra(graph, start, via)
-    path2, distance2 = dijkstra(graph, via, end)
+# use_slope、algorithm、counter 都可以不填：預設用 dijkstra 找最短距離（見 core/pathfinder.py）
+# 有傳 counter 時，兩段的工作量會加起來
+def route_via(graph, start, via, end, use_slope=False, algorithm=dijkstra, counter=None):
+    counter1 = {}
+    counter2 = {}
+    path1, distance1 = algorithm(graph, start, via, use_slope, counter1)
+    path2, distance2 = algorithm(graph, via, end, use_slope, counter2)
+    if counter is not None:
+        counter["visited"] = counter1["visited"] + counter2["visited"]
+        counter["checked"] = counter1["checked"] + counter2["checked"]
     if len(path1) == 0 or len(path2) == 0:
         return [], float("inf")
     # path2 的第一個點就是 via，已經在 path1 的最後面了，所以跳過，不然 via 會出現兩次
@@ -28,8 +45,10 @@ def route_via(graph, start, via, end):
 # 按下「找路線」時用：先檢查使用者的選擇有沒有問題，沒問題才找路線
 # start、end、via 是地點 id，輸入框的字找不到地點時是 None
 # has_via：途經點輸入框有沒有填字（沒填是正常的；有填卻找不到，要提醒使用者，不能當作沒填）
+# use_slope：True 時找最省力的路（上坡算比較遠），這時「總距離」其實是「花費」，
+#            真正走多少公尺要用 route_summary 算
 # 回傳 (路線, 總距離, 錯誤訊息)；成功時錯誤訊息是 None，失敗時路線是 []、總距離是 None
-def plan_route(graph, start, end, has_via, via):
+def plan_route(graph, start, end, has_via, via, use_slope=False):
     if start is None:
         return [], None, "找不到起點。\n請從推薦清單選一個地點。"
     if end is None:
@@ -43,9 +62,9 @@ def plan_route(graph, start, end, has_via, via):
         return [], None, "起點和終點是同一個地方。"
 
     if via is None:
-        path, total = dijkstra(graph, start, end)
+        path, total = dijkstra(graph, start, end, use_slope)
     else:
-        path, total = route_via(graph, start, via, end)
+        path, total = route_via(graph, start, via, end, use_slope)
 
     if len(path) == 0:
         return [], None, "這兩個地點之間沒有道路可以走到。"
@@ -126,3 +145,48 @@ def turn_text(x1, y1, x2, y2, x3, y3):
     if turn > 0:
         return "右轉"
     return "左轉"
+
+
+# 算出整條路線的 (實際距離, 總共上坡幾公尺, 總共下坡幾公尺)
+# 找「最省力」的路時，演算法回傳的是花費，不是距離，所以要另外沿著路線加一次
+def route_summary(graph, path):
+    distance = 0
+    up = 0
+    down = 0
+    for i in range(len(path) - 1):
+        distance = distance + graph.distance_between(path[i], path[i + 1])
+        climb = graph.climb(path[i], path[i + 1])
+        if climb > 0:
+            up = up + climb
+        else:
+            down = down - climb
+    return distance, up, down
+
+
+# 用三種演算法各找一次同一段路（start → via → end，via 可以是 None），比較它們的差別
+# repeat：每種演算法重複跑幾次再算平均時間；只跑一次太快了，時間會是 0 或忽大忽小
+# 回傳一個清單，每種演算法一筆字典：
+#   name 名稱、path 路線、distance 實際距離、visited 處理幾個地點（Bellman-Ford 是幾輪）、
+#   checked 檢查幾次道路、ms 平均每次花幾毫秒
+def compare_algorithms(graph, start, end, via=None, use_slope=False, repeat=200):
+    results = []
+    for name, algorithm in ALGORITHMS:
+        counter = {}
+        begin = time.perf_counter()
+        for i in range(repeat):
+            if via is None:
+                path, total = algorithm(graph, start, end, use_slope, counter)
+            else:
+                path, total = route_via(graph, start, via, end, use_slope, algorithm, counter)
+        seconds = time.perf_counter() - begin
+
+        distance, up, down = route_summary(graph, path)
+        results.append({
+            "name": name,
+            "path": path,
+            "distance": distance,
+            "visited": counter["visited"],
+            "checked": counter["checked"],
+            "ms": seconds / repeat * 1000,
+        })
+    return results
