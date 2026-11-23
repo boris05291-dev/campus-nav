@@ -95,6 +95,7 @@ class MapView(tk.Canvas):
                 width=config.ROAD_EDGE_WIDTH,
                 capstyle=tk.ROUND,
                 joinstyle=tk.ROUND,
+                tags="road",    # 放名稱時用來檢查有沒有蓋到道路
             )
         for edge in self.graph.edges:
             self.create_line(
@@ -131,7 +132,9 @@ class MapView(tk.Canvas):
         for place_id, place in places:
             x, y = self.to_canvas(place["x"], place["y"])
             # 地圖空間比較小，名稱再去掉「、」後面的部分，例如「J 圖書館、教學大樓」→「J 圖書館」
-            label = self.place_label(x, y, self.graph.short_name(place_id).split("、")[0])
+            # config.MAP_LABELS 有寫的地點，改用更短的名稱，比較不會擋到道路
+            text = config.MAP_LABELS.get(place_id, self.graph.short_name(place_id).split("、")[0])
+            label = self.place_label(x, y, text)
             # 滑鼠移到圓點或名稱上就顯示全名，移開就收起來
             # pid=place_id 是把「這一圈的 id」存進 lambda，不然每個地點都會變成最後一個 id
             for item in (dots[place_id], label):
@@ -139,8 +142,8 @@ class MapView(tk.Canvas):
                 self.tag_bind(item, "<Leave>", lambda event: self.hide_info())
                 self.tag_bind(item, "<Button-1>", lambda event, pid=place_id: self.on_place_click(pid))
 
-    # 在圓點旁邊放名稱：依序試「下、右、左、上」，用第一個不會蓋到其他名稱或圓點的位置
-    # 四個位置都會重疊的話，就放在下面
+    # 在圓點旁邊放名稱：試 8 個位置（下、右、左、上、右下、左下、右上、左上），
+    # 每個位置算「重疊分數」，用分數最低的；分數 0（什麼都沒蓋到）就直接用，不用再試
     def place_label(self, x, y, text):
         r = config.PLACE_RADIUS
         # 每個位置是 (往右移多少, 往下移多少, 文字要對齊圓點的哪一邊)
@@ -149,7 +152,13 @@ class MapView(tk.Canvas):
             (r + 3, 0, tk.W),
             (-r - 3, 0, tk.E),
             (0, -r - 2, tk.S),
+            (r, r, tk.NW),
+            (-r, r, tk.NE),
+            (r, -r, tk.SW),
+            (-r, -r, tk.SE),
         ]
+        best_label = None
+        best_score = 0
         for dx, dy, anchor in positions:
             label = self.create_text(
                 x + dx, y + dy,
@@ -159,21 +168,20 @@ class MapView(tk.Canvas):
                 font=config.LABEL_FONT,
                 tags=("place", "label"),
             )
-            if not self.overlaps_others(label):
-                self.add_label_background(label)
-                return label
-            self.delete(label)
+            score = self.overlap_score(label)
+            if best_label is None or score < best_score:
+                # 比目前最好的還好：把舊的刪掉，留下這個
+                if best_label is not None:
+                    self.delete(best_label)
+                best_label = label
+                best_score = score
+            else:
+                self.delete(label)
+            if best_score == 0:
+                break
 
-        label = self.create_text(
-            x, y + r + 2,
-            text=text,
-            anchor=tk.N,
-            fill=config.TEXT_COLOR,
-            font=config.LABEL_FONT,
-            tags=("place", "label"),
-        )
-        self.add_label_background(label)
-        return label
+        self.add_label_background(best_label)
+        return best_label
 
     # 在名稱後面墊一塊白底，字才不會壓在綠地、樹或道路上看不清楚
     def add_label_background(self, label):
@@ -187,16 +195,21 @@ class MapView(tk.Canvas):
         # 白底是後畫的，會蓋住字，所以把字移回上面
         self.tag_raise(label, background)
 
-    # 檢查某個名稱有沒有蓋到別的名稱或圓點（道路線不算）
-    def overlaps_others(self, item):
+    # 算某個名稱的「重疊分數」：蓋到別的名稱或圓點一個算 100 分（一定要避開），
+    # 蓋到一條道路算 1 分（盡量避開）；分數越低越好
+    def overlap_score(self, item):
         left, top, right, bottom = self.bbox(item)
-        for other in self.find_overlapping(left, top, right, bottom):
+        score = 0
+        # 白底比字左右各寬 2 像素，所以範圍也放寬 2 像素
+        for other in self.find_overlapping(left - 2, top, right + 2, bottom):
             if other == item:
                 continue
             tags = self.gettags(other)
-            if "label" in tags or "dot" in tags:
-                return True
-        return False
+            if "label" in tags or "labelbg" in tags or "dot" in tags:
+                score = score + 100
+            elif "road" in tags:
+                score = score + 1
+        return score
 
     # 在地點旁邊顯示一個白色小方框，寫出地點全名；游標變成手指，提示可以點
     def show_info(self, place_id):
