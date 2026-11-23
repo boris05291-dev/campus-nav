@@ -19,6 +19,9 @@ from ui.scenery import BUILDINGS
 MIN_METERS_PER_PIXEL = 0.5
 MAX_METERS_PER_PIXEL = 1.2
 
+# 道路坡度的上限（%）。目前最陡的是 B 宿舍旁邊那段（約 42%，可能是樓梯），超過 50% 就當作打錯
+MAX_SLOPE = 50
+
 
 # 用經緯度算兩個地點之間的直線距離（公尺），這是球面上兩點距離的公式（haversine）
 def straight_distance(a, b):
@@ -78,6 +81,20 @@ class TestMapData(unittest.TestCase):
             with self.subTest(place=place_id):
                 path, total = dijkstra(self.graph, first, place_id)
                 self.assertNotEqual(path, [])
+
+    # 每個地點都要有海拔，而且在合理範圍（校區在內門山區，大約 50 ~ 250 公尺）
+    def test_elevation_filled(self):
+        for place_id, place in self.graph.places.items():
+            with self.subTest(place=place_id):
+                self.assertIsNotNone(place["elevation"])
+                self.assertGreater(place["elevation"], 50)
+                self.assertLess(place["elevation"], 250)
+
+    # 每條路的坡度不能超過 MAX_SLOPE；超過的話很可能是海拔或距離打錯了
+    def test_slope_reasonable(self):
+        for edge in self.graph.edges:
+            with self.subTest(road=edge["from"] + " - " + edge["to"]):
+                self.assertLessEqual(abs(self.graph.slope_percent(edge["from"], edge["to"])), MAX_SLOPE)
 
     # scenery.py 的建築物是用地點 id 找位置，JSON 改了 id 卻忘了改這裡，程式一開就會當掉
     def test_building_ids_exist(self):
