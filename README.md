@@ -99,7 +99,7 @@ main.py 讀 map_data.json → CampusGraph 建好鄰接表 → 開視窗
 
 ## 五、地圖資料
 
-`data/map_data.json` 裡有 **107 個點、126 條道路**：
+`data/map_data.json` 裡有 **107 個點、127 條道路**：
 
 | 種類 | 意思 | 數量 |
 |------|------|------|

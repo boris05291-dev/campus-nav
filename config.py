@@ -74,6 +74,8 @@ LABEL_SIDES = {
     "P7": "右",
     "P13": "右上",
     "M": "右",
+    "H": "右",
+    "P8": "左",
 }
 # 比較三種演算法時，三條路線各用一種顏色（Dijkstra 紅、A* 藍、Bellman-Ford 橘）
 COMPARE_COLORS = ["#E53935", "#1E63C8", "#F29D0E"]

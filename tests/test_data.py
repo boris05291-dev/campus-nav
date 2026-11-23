@@ -14,7 +14,7 @@ from core.pathfinder import dijkstra
 from main import load_error_reason
 from ui.scenery import BUILDINGS
 
-# 「公尺 ÷ 像素長度」的合理範圍。目前 126 條路都在 0.67 ~ 1.0 之間，
+# 「公尺 ÷ 像素長度」的合理範圍。目前 127 條路都在 0.67 ~ 1.0 之間，
 # 超出這個範圍，很可能是 distance_m 或 path 打錯了
 MIN_METERS_PER_PIXEL = 0.5
 MAX_METERS_PER_PIXEL = 1.2
