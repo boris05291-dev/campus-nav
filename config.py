@@ -9,9 +9,9 @@ MAP_DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "map_data.json")
 
 # ===== 視窗大小 =====
 WINDOW_TITLE = "校園最短路徑導航"
-PANEL_WIDTH = 340     # 右邊控制面板的寬（字放大了，面板也跟著加寬）
+PANEL_WIDTH = 400     # 右邊控制面板的寬（字放大了，面板也跟著加寬）
 
-# 左邊地圖畫布的大小；地圖會自動縮放、置中放進這個範圍
+# 左邊地圖畫布的長寬比例；實際寬度由 app.py 的 fit_screen 依螢幕大小決定，地圖會自動縮放、置中
 MAP_WIDTH = 1170
 MAP_HEIGHT = 630
 MAP_MARGIN = 30       # 地圖四周留白，避免地點貼在邊框上
@@ -30,7 +30,7 @@ ROAD_EDGE_COLOR = "#8CA872"   # 道路兩旁的邊線
 ROAD_EDGE_WIDTH = 8           # 邊線要比道路粗，才會露出來
 LEGEND_BG_COLOR = "#FFFFFF"   # 圖例的底色
 PLACE_OUTLINE = "#FFFFFF"     # 地點圓點的外框（白邊，疊在道路上比較清楚）
-PLACE_RADIUS = 6              # 地點圓點的半徑（像素）
+PLACE_RADIUS = 7             # 地點圓點的半徑（像素）
 
 # 不同種類的地點用不同顏色：building 建築、facility 設施、gate 出入口
 PLACE_COLORS = {
@@ -56,7 +56,7 @@ ROUTE_COLOR = "#E53935"       # 找到的路線
 ROUTE_WIDTH = 6               # 路線線條粗細
 START_COLOR = "#2E7D32"       # 起點標記（綠）
 END_COLOR = "#C62828"         # 終點標記（紅）
-MARKER_RADIUS = 9             # 起點、終點標記的半徑
+MARKER_RADIUS = 11            # 起點、終點標記的半徑
 
 LABEL_BG_COLOR = "#FFFFFF"    # 地圖上地點名稱的白底，名稱才不會和綠地、樹混在一起
 # 比較三種演算法時，三條路線各用一種顏色（Dijkstra 紅、A* 藍、Bellman-Ford 橘）
@@ -78,9 +78,9 @@ STEEP_SLOPE = 8
 FONT_CHOICES = ["Microsoft JhengHei UI", "Microsoft JhengHei", "PingFang TC",
                 "Noto Sans CJK TC", "Noto Sans TC", "WenQuanYi Zen Hei"]
 # 字型大小（點）；原本 9、10 在投影機和高解析度螢幕上太小，放大一些
-TITLE_SIZE = 17
-LABEL_SIZE = 11
-TEXT_SIZE = 12
+TITLE_SIZE = 20
+LABEL_SIZE = 13
+TEXT_SIZE = 14
 # 下面三個是預設值，程式啟動時 choose_font 會換成上面找到的字型
 TITLE_FONT = ("Microsoft JhengHei", TITLE_SIZE, "bold")
 LABEL_FONT = ("Microsoft JhengHei", LABEL_SIZE)

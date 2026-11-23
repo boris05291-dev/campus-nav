@@ -20,6 +20,8 @@ class App(tk.Tk):
         self.title(config.WINDOW_TITLE)
         # 大小固定，排版才不會被拉亂
         self.resizable(False, False)
+        # 視窗變大了，放在螢幕左上角，下面才不會被工作列擋住
+        self.geometry("+0+0")
         self.graph = graph
 
         # 這兩步要在建立地圖和面板之前做，它們才會用到調整後的字型和大小
@@ -54,14 +56,12 @@ class App(tk.Tk):
     # 依照螢幕調整畫面大小
     # 1. 螢幕縮放（125%、150%）：字型用「點」當單位會自動變大，但畫布、線條用「像素」不會，
     #    所以把像素大小也乘上同樣的倍數，不然字變大了，面板和圓點卻還是一樣小，會擠在一起
-    # 2. 螢幕太小時（例如 1366 寬的筆電、投影機），把地圖縮到放得下，不然右邊面板會跑出螢幕
+    # 2. 地圖畫布跟著螢幕大小走：大螢幕放大、小螢幕（筆電、投影機）縮小，右邊面板才不會跑出螢幕
     def fit_screen(self):
         # 一般螢幕 1 英吋是 96 像素；縮放 150% 的螢幕是 144，倍數就是 1.5
         ratio = self.winfo_fpixels("1i") / 96
         if ratio > 1:
             config.PANEL_WIDTH = int(config.PANEL_WIDTH * ratio)
-            config.MAP_WIDTH = int(config.MAP_WIDTH * ratio)
-            config.MAP_HEIGHT = int(config.MAP_HEIGHT * ratio)
             config.ROAD_WIDTH = round(config.ROAD_WIDTH * ratio)
             config.ROAD_EDGE_WIDTH = round(config.ROAD_EDGE_WIDTH * ratio)
             config.ROUTE_WIDTH = round(config.ROUTE_WIDTH * ratio)
@@ -69,8 +69,10 @@ class App(tk.Tk):
             config.MARKER_RADIUS = round(config.MARKER_RADIUS * ratio)
 
         # 地圖會自動縮放（map_view.compute_scale），所以只要改畫布大小；20、100 是留給視窗邊框和工作列
-        config.MAP_WIDTH = min(config.MAP_WIDTH, self.winfo_screenwidth() - config.PANEL_WIDTH - 20)
-        config.MAP_HEIGHT = min(config.MAP_HEIGHT, self.winfo_screenheight() - 100)
+        # 寬度用滿螢幕剩下的空間，高度照 config 原本的長寬比例算，地圖上下才不會空一大塊
+        shape = config.MAP_HEIGHT / config.MAP_WIDTH
+        config.MAP_WIDTH = self.winfo_screenwidth() - config.PANEL_WIDTH - 20
+        config.MAP_HEIGHT = min(int(config.MAP_WIDTH * shape), self.winfo_screenheight() - 100)
 
     # 地圖資料裡有沒有任何地點填了高度；沒有的話，坡度功能沒有作用，面板會提醒
     def has_elevation(self):
