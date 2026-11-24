@@ -2554,7 +2554,7 @@
       "from_name": "路口",
       "to_name": "路口",
       "distance_m": 8,
-      "stairs": false,
+      "stairs": true,
       "pieces": [
         {
           "id": "jR18-jR19-01",

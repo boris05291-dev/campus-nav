@@ -1342,6 +1342,7 @@
       "from": "jR18",
       "to": "jR19",
       "distance_m": 8,
+      "stairs": true,
       "path": [
         [699, 258],
         [691, 250]
