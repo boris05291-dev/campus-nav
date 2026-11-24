@@ -128,6 +128,7 @@ class CampusGraph:
     # - 上坡：每爬 1 公尺，當作多走 config.CLIMB_FACTOR 公尺（奈史密斯規則：爬高 1 公尺大約和平地走 8 公尺一樣累）
     #         再乘上「陡度加成」：坡度每多 1%，爬坡多花 config.STEEP_EXTRA%，所以越陡越慢
     #         例：100 公尺爬 5 公尺（坡度 5%），加成 1.25 倍，花費 = 100 + 5 × 8 × 1.25 = 150
+    #         加成最多 config.STEEP_BONUS_MAX（1.5 倍），樓梯這種很陡的路才不會算得太慢
     # - 緩下坡：走起來比較快，每下降 1 公尺少算 config.DOWNHILL_FACTOR 公尺，
     #           但最多只少算 config.DOWNHILL_MAX（10%）
     #           例：100 公尺下降 3 公尺，花費 = 100 - 3 × 2 = 94
@@ -141,6 +142,8 @@ class CampusGraph:
 
         if up > 0:
             steep_bonus = 1 + percent * config.STEEP_EXTRA / 100
+            if steep_bonus > config.STEEP_BONUS_MAX:
+                steep_bonus = config.STEEP_BONUS_MAX
             return distance + up * config.CLIMB_FACTOR * steep_bonus
 
         if up < 0 and -percent < config.STEEP_SLOPE:

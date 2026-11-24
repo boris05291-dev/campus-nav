@@ -128,6 +128,10 @@ class TestSlope(unittest.TestCase):
         steep_extra = self.graph.step_cost("LIB", "EAT", 50, True) - 50       # 坡度 10%
         self.assertGreater(steep_extra, gentle_extra)
 
+    # 陡度加成最多 STEEP_BONUS_MAX 倍：4 公尺爬 5 公尺（坡度 125%，像樓梯）也只乘 1.5 倍
+    def test_steep_bonus_limit(self):
+        self.assertAlmostEqual(self.graph.step_cost("LIB", "EAT", 4, True), 4 + 5 * config.CLIMB_FACTOR * config.STEEP_BONUS_MAX)
+
     # 緩下坡比較快：100 公尺下降 3 公尺（坡度 3%），少算 3 × DOWNHILL_FACTOR 公尺
     def test_gentle_downhill_faster(self):
         self.graph.places["EAT"]["elevation"] = 3
