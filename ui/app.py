@@ -1,6 +1,7 @@
 # ui/app.py
 # 負責：建立 tkinter 主視窗，把地圖區（map_view）和側邊欄（side_panel）組合起來，
-# 並在使用者按下「找路線」或「比較三種演算法」後，呼叫演算法、把結果交給畫面顯示。
+# 並在使用者按下「找路線」或「比較三種演算法」後，呼叫演算法、把結果交給畫面顯示，
+# 比較時還會在地圖上播放三種演算法的搜尋過程動畫。
 # 排版：左邊地圖畫布（大小見 config.MAP_WIDTH、MAP_HEIGHT），右邊控制面板（寬度見 config.PANEL_WIDTH）。
 
 import tkinter as tk
@@ -116,7 +117,7 @@ class App(tk.Tk):
         self.side_panel.show_result(stops, distance, minutes, up, down)
 
     # 按下「比較三種演算法」時執行：同一段路用 Dijkstra、A*、Bellman-Ford 各找一次，
-    # 三條路線用不同顏色畫在地圖上，結果區列出每種演算法的距離、工作量和花的時間
+    # 結果區用長條圖比較工作量和時間，地圖上依序播放三種演算法的搜尋過程動畫
     def compare(self):
         path = self.plan()
         if path is None:
@@ -124,10 +125,18 @@ class App(tk.Tk):
         via = None
         if self.side_panel.has_via():
             via = self.side_panel.get_via()
-        results = compare_algorithms(self.graph, path[0], path[-1], via, self.side_panel.use_slope())
+        # 存起來，按「播放」按鈕時要用
+        self.compare_results = compare_algorithms(self.graph, path[0], path[-1], via, self.side_panel.use_slope())
+        self.side_panel.show_comparison(self.compare_results, len(self.graph.places), len(self.graph.edges), self.play)
+        self.play([0, 1, 2])
 
-        paths = []
-        for result in results:
-            paths.append(result["path"])
-        self.map_view.draw_compare_routes(paths, config.COMPARE_COLORS)
-        self.side_panel.show_comparison(results, len(self.graph.places), len(self.graph.edges))
+    # 在地圖上播放搜尋過程動畫；indices 是要播的演算法編號（0 Dijkstra、1 A*、2 Bellman-Ford）
+    # 播完第一個後，再用同樣的方法播剩下的，所以 [0, 1, 2] 會三種依序播放
+    def play(self, indices):
+        index = indices[0]
+        rest = indices[1:]
+        result = self.compare_results[index]
+        on_done = None
+        if len(rest) > 0:
+            on_done = lambda: self.play(rest)
+        self.map_view.play_search(result["name"], config.COMPARE_COLORS[index], result["path"], result["steps"], on_done)

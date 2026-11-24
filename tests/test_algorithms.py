@@ -44,6 +44,24 @@ class TestThreeAlgorithms(unittest.TestCase):
         self.assertGreater(counter["visited"], 0)
         self.assertGreater(counter["checked"], 0)
 
+    # counter["steps"] 記下搜尋過程：Dijkstra、A* 每一步一個地點，第一步是起點、最後一步是終點；
+    # Bellman-Ford 每一輪一步。最後一步記的檢查次數，要等於總共檢查的次數
+    def test_steps(self):
+        for algorithm in [dijkstra, a_star]:
+            with self.subTest(algorithm=algorithm.__name__):
+                counter = {}
+                algorithm(self.graph, "LIB", "GYM", False, counter)
+                self.assertEqual(len(counter["steps"]), counter["visited"])
+                self.assertEqual(counter["steps"][0][0], ["LIB"])
+                self.assertEqual(counter["steps"][-1][0], ["GYM"])
+                self.assertEqual(counter["steps"][-1][1], counter["checked"])
+        counter = {}
+        bellman_ford(self.graph, "LIB", "GYM", False, counter)
+        self.assertEqual(len(counter["steps"]), counter["visited"])
+        self.assertEqual(counter["steps"][-1][1], counter["checked"])
+        # 最後一輪什麼都沒變（所以才停下來），這一步沒有地點
+        self.assertEqual(counter["steps"][-1][0], [])
+
 
 class TestRealMap(unittest.TestCase):
 
