@@ -28,6 +28,8 @@ ROAD_COLOR = "#FFFFFF"        # 道路（白色）
 ROAD_WIDTH = 5                # 道路線條粗細
 ROAD_EDGE_COLOR = "#8CA872"   # 道路兩旁的邊線
 ROAD_EDGE_WIDTH = 8           # 邊線要比道路粗，才會露出來
+STAIRS_COLOR = "#8D8D8D"      # 樓梯：在白色路面上畫灰色虛線，看起來像一階一階
+STAIRS_DASH = (2, 3)          # 虛線樣式：畫 2 像素、空 3 像素
 LEGEND_BG_COLOR = "#FFFFFF"   # 圖例的底色
 PLACE_OUTLINE = "#FFFFFF"     # 地點圓點的外框（白邊，疊在道路上比較清楚）
 PLACE_RADIUS = 7             # 地點圓點的半徑（像素）
@@ -104,6 +106,12 @@ DOWNHILL_FACTOR = 2
 DOWNHILL_MAX = 0.1
 # 坡度超過這個百分比，結果區會標示「陡」；陡下坡要小心走，不會變快
 STEEP_SLOPE = 8
+
+# ===== 樓梯 =====
+# JSON 裡標了 "stairs": true 的道路是樓梯。樓梯的海拔資料不準（地形資料解析度 90 公尺，量不出幾公尺長的樓梯），
+# 所以樓梯不看坡度，直接用固定倍數：走 1 公尺樓梯，當作平地走幾公尺
+STAIRS_UP_FACTOR = 2          # 上樓梯
+STAIRS_DOWN_FACTOR = 1.5      # 下樓梯（要看腳下，也比平地慢）
 
 # ===== 字型 =====
 # 依序找電腦裡有沒有這些字型，用第一個找到的（app.py 的 choose_font 會處理）

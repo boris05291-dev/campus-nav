@@ -13,12 +13,12 @@ from core.graph import CampusGraph, load_error_reason
 from core.pathfinder import a_star, dijkstra
 from ui.scenery import BUILDINGS
 
-# 「公尺 ÷ 像素長度」的合理範圍。目前 127 條路都在 0.67 ~ 1.0 之間，
+# 「公尺 ÷ 像素長度」的合理範圍。目前每條路都在 0.67 ~ 1.0 之間，
 # 超出這個範圍，很可能是 distance_m 或 path 打錯了
 MIN_METERS_PER_PIXEL = 0.5
 MAX_METERS_PER_PIXEL = 1.2
 
-# 道路坡度的上限（%）。目前最陡的是 B 宿舍旁邊那段（約 42%，可能是樓梯），超過 50% 就當作打錯
+# 道路坡度的上限（%）。目前最陡的是 B 宿舍旁邊那段（約 42%），超過 50% 就當作打錯
 MAX_SLOPE = 50
 
 
@@ -118,6 +118,16 @@ class TestMapData(unittest.TestCase):
         for edge in self.graph.edges:
             with self.subTest(road=edge["from"] + " - " + edge["to"]):
                 self.assertLessEqual(abs(self.graph.slope_percent(edge["from"], edge["to"])), MAX_SLOPE)
+
+    # 實地確認過的樓梯（2026-11-24），JSON 裡都要標 "stairs": true；其他道路都不是樓梯
+    def test_known_stairs(self):
+        expected = [("P12", "P11"), ("P11", "P10"), ("F", "jF"), ("P5", "jN13"),
+                    ("P5", "jN14"), ("jR39", "P6"), ("P8", "H")]
+        found = []
+        for edge in self.graph.edges:
+            if edge["stairs"]:
+                found.append((edge["from"], edge["to"]))
+        self.assertEqual(sorted(found), sorted(expected))
 
     # 樓層資料（floors）只能填在建築和設施上，每一層至少要有一個單位，單位名稱不能是空的
     def test_floors_reasonable(self):

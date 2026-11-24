@@ -3,6 +3,7 @@
 # - 三種演算法在測試地圖和真正的校園地圖上，找到的距離都要一樣（都是最短）
 # - counter 有記錄工作量；A* 檢查的道路不會比 Dijkstra 多
 # - 坡度：上坡會被當成比較遠，「最省力路線」會繞開陡坡；route_summary 算對上下坡
+# - 樓梯：標了 stairs 的道路不看坡度，用固定倍數算花費
 
 import os
 import unittest
@@ -10,7 +11,7 @@ import unittest
 import config
 from core.graph import CampusGraph
 from core.pathfinder import a_star, bellman_ford, dijkstra
-from core.route import compare_algorithms, plan_route, route_summary, walk_minutes
+from core.route import compare_algorithms, plan_route, route_summary, stairs_count, walk_minutes
 
 TEST_MAP = os.path.join(os.path.dirname(__file__), "test_map.json")
 ALL = [dijkstra, a_star, bellman_ford]
@@ -167,6 +168,29 @@ class TestSlope(unittest.TestCase):
     def test_route_summary(self):
         self.assertEqual(route_summary(self.graph, ["LIB", "EAT", "GYM"]), (7, 5, 5))
         self.assertEqual(route_summary(self.graph, ["LIB"]), (0, 0, 0))
+
+    # 把 LIB→EAT 改成樓梯：上樓梯花費 = 距離 × STAIRS_UP_FACTOR，下樓梯 = 距離 × STAIRS_DOWN_FACTOR，
+    # 不再用坡度的規則；不考慮坡度時花費還是距離
+    def test_stairs_cost(self):
+        self.graph.find_edge("LIB", "EAT")["stairs"] = True
+        self.assertTrue(self.graph.is_stairs("EAT", "LIB"))
+        self.assertFalse(self.graph.is_stairs("EAT", "GYM"))
+        self.assertEqual(self.graph.step_cost("LIB", "EAT", 4, True), 4 * config.STAIRS_UP_FACTOR)
+        self.assertEqual(self.graph.step_cost("EAT", "LIB", 4, True), 4 * config.STAIRS_DOWN_FACTOR)
+        self.assertEqual(self.graph.step_cost("LIB", "EAT", 4, False), 4)
+
+    # 兩邊一樣高（不知道哪邊高）的樓梯，兩個方向都當作上樓梯
+    def test_flat_stairs_count_as_up(self):
+        self.graph.places["EAT"]["elevation"] = 0
+        self.graph.find_edge("LIB", "EAT")["stairs"] = True
+        self.assertEqual(self.graph.step_cost("EAT", "LIB", 4, True), 4 * config.STAIRS_UP_FACTOR)
+
+    # stairs_count：路線上有幾段樓梯
+    def test_stairs_count(self):
+        self.assertEqual(stairs_count(self.graph, ["LIB", "EAT", "GYM"]), 0)
+        self.graph.find_edge("LIB", "EAT")["stairs"] = True
+        self.assertEqual(stairs_count(self.graph, ["LIB", "EAT", "GYM"]), 1)
+        self.assertEqual(stairs_count(self.graph, ["LIB"]), 0)
 
 
 if __name__ == "__main__":

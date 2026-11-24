@@ -9,6 +9,7 @@
 #   "nodes": [ {"id": "J", "name": "J 圖書館…", "type": "building", "x": 190, "y": 215}, ... ],
 #   "edges": [ {"from": "A", "to": "J", "distance_m": 45, "path": [[x, y], [x, y], ...]}, ... ]
 # }
+# 道路可以加 "stairs": true，表示這段是樓梯（沒填就是一般道路）
 # 程式裡一律用 id 代表地點，name 只拿來顯示。
 # x、y 和 path 都是地圖上的像素座標；path 是沿著道路畫的折線（從 from 畫到 to）。
 # 地點還可以有這些欄位（可以不填）：
@@ -48,7 +49,7 @@ class CampusGraph:
         self.places = {}
         # 鄰接表：地點 id -> [(相鄰地點 id, 距離), (相鄰地點 id, 距離), ...]
         self.adjacency = {}
-        # 所有道路，每條只記一次：[{"from": a, "to": b, "distance": 距離, "path": 折線}, ...]
+        # 所有道路，每條只記一次：[{"from": a, "to": b, "distance": 距離, "path": 折線, "stairs": 是不是樓梯}, ...]
         self.edges = []
         # 用 (a, b) 直接查道路：(地點 id, 地點 id) -> 道路，兩個方向都會記
         self.edge_lookup = {}
@@ -83,11 +84,12 @@ class CampusGraph:
 
         # 第二步：把每條道路加進去
         for edge in data["edges"]:
-            self.add_road(edge["from"], edge["to"], edge["distance_m"], edge.get("path"))
+            self.add_road(edge["from"], edge["to"], edge["distance_m"], edge.get("path"), edge.get("stairs", False))
 
     # 加入一條雙向道路：a 可以走到 b，b 也可以走到 a
     # path 是沿著道路的折線；沒有給的話，就用兩個地點連成的直線
-    def add_road(self, a, b, distance, path=None):
+    # stairs 是 True 代表這段是樓梯
+    def add_road(self, a, b, distance, path=None, stairs=False):
         # 檢查道路兩端的地點都存在，避免 JSON 打錯字卻沒發現
         if a not in self.adjacency:
             raise ValueError("道路連到不存在的地點：" + a)
@@ -108,7 +110,7 @@ class CampusGraph:
 
         self.adjacency[a].append((b, distance))
         self.adjacency[b].append((a, distance))
-        edge = {"from": a, "to": b, "distance": distance, "path": path}
+        edge = {"from": a, "to": b, "distance": distance, "path": path, "stairs": stairs}
         self.edges.append(edge)
         # 兩個方向都記進字典，查的時候不用管方向；同兩點有好幾條路時只留最短的
         for key in [(a, b), (b, a)]:
@@ -132,6 +134,12 @@ class CampusGraph:
         if edge["from"] == a:
             return edge["path"]
         return list(reversed(edge["path"]))
+
+    # a、b 之間的道路是不是樓梯（兩個方向都一樣）；沒有直接相連的道路就回傳 False
+    def is_stairs(self, a, b):
+        if (a, b) not in self.edge_lookup:
+            return False
+        return self.edge_lookup[(a, b)]["stairs"]
 
     # 從 a 走到 b 要爬升幾公尺：往上是正的、往下是負的
     # 只要有一邊沒填高度，就不知道坡度，當作平路（0）
@@ -161,12 +169,21 @@ class CampusGraph:
     #           但最多只少算 config.DOWNHILL_MAX（10%）
     #           例：100 公尺下降 3 公尺，花費 = 100 - 3 × 2 = 94
     # - 陡下坡（坡度達 config.STEEP_SLOPE）：要小心走，不會變快，花費就是距離
+    # - 樓梯（JSON 標了 "stairs": true）：不看坡度，上樓梯花費 = 距離 × config.STAIRS_UP_FACTOR，
+    #   下樓梯 = 距離 × config.STAIRS_DOWN_FACTOR；兩邊一樣高（不知道哪邊高）時當作上樓梯
+    #   例：10 公尺的樓梯，往上走花費 = 10 × 2 = 20，往下走 = 10 × 1.5 = 15
     # 花費最少是距離的 9 成；A* 估計用的直線距離有把這 1 成和經緯度誤差都扣掉（見 straight_distance），
     # 所以估計值不會比真正的花費大，A* 的答案還是對的
     def step_cost(self, a, b, distance, use_slope):
         if not use_slope or distance == 0:
             return distance
         up = self.climb(a, b)
+
+        if self.is_stairs(a, b):
+            if up >= 0:
+                return distance * config.STAIRS_UP_FACTOR
+            return distance * config.STAIRS_DOWN_FACTOR
+
         percent = up / distance * 100
 
         if up > 0:

@@ -296,7 +296,8 @@ class SidePanel(tk.Frame):
     # stops 是 [(地點 id, 離上一站幾公尺, 離開上一站時怎麼轉), ...]，只有建築和設施，路口已經跳過
     # 「怎麼轉」是 turn_text 的結果，例如「右轉」；第一段沒有轉彎，是 None
     # distance 是實際總距離，minutes 是步行分鐘數，up、down 是總共上坡、下坡幾公尺
-    def show_result(self, stops, distance, minutes, up, down):
+    # stairs 是路線上有幾段樓梯（可以不填，當作 0）
+    def show_result(self, stops, distance, minutes, up, down, stairs=0):
         # 總距離和步行時間放最上面，路線很長時也不用往下捲才看得到
         lines = []
         if self.use_slope():
@@ -304,6 +305,8 @@ class SidePanel(tk.Frame):
         lines.append("總距離：" + str(distance) + " 公尺")
         if self.has_elevation:
             lines.append("上坡 " + str(round(up, 1)) + " 公尺、下坡 " + str(round(down, 1)) + " 公尺")
+        if stairs > 0:
+            lines.append("會經過 " + str(stairs) + " 段樓梯（地圖上的灰色虛線）")
         lines.append("步行時間：約 " + str(round(minutes, 1)) + " 分鐘")
         lines.append("")
         number = 1
