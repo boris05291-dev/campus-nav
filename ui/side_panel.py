@@ -70,10 +70,16 @@ class SearchBox:
 
     # 依照輸入框的字重新產生推薦清單，預設選第一筆（最像的）
     def update_suggestions(self):
-        self.suggestions = self.graph.suggest(self.entry.get())
+        text = self.entry.get()
+        self.suggestions = self.graph.suggest(text)
         self.listbox.delete(0, tk.END)
         for place_id in self.suggestions:
-            self.listbox.insert(tk.END, self.graph.places[place_id]["name"])
+            # 打的是樓層裡的單位（例如「出納」），就在後面註明在幾樓，例如「C 行政…【2F 出納】」
+            line = self.graph.places[place_id]["name"]
+            hint = self.graph.room_hint(place_id, text)
+            if hint != "":
+                line = self.graph.short_name(place_id) + "【" + hint + "】"
+            self.listbox.insert(tk.END, line)
 
         if len(self.suggestions) == 0:
             self.hide()
@@ -173,7 +179,7 @@ class SidePanel(tk.Frame):
 
         hint = tk.Label(
             self,
-            text="點輸入框或打幾個字，就會推薦地點\n例如：j、圖書、停車　↑↓ 選擇，Enter 確定\n也可以直接點地圖：第一下起點、第二下終點",
+            text="點輸入框或打幾個字，就會推薦地點\n例如：j、圖書、停車、出納　↑↓ 選擇，Enter 確定\n也可以直接點地圖：第一下起點、第二下終點",
             font=config.LABEL_FONT,
             bg=config.PANEL_BG_COLOR,
             fg=config.TEXT_COLOR,
@@ -316,6 +322,14 @@ class SidePanel(tk.Frame):
             lines.append(str(number) + ". " + self.graph.short_name(place_id))
             previous = place_id
             number = number + 1
+
+        # 終點如果有樓層資料（例如 C 行政大樓），列出各樓層的單位，到了才知道要上幾樓
+        end_floors = self.graph.floor_lines(previous)
+        if len(end_floors) > 0:
+            lines.append("")
+            lines.append("【" + self.graph.short_name(previous) + " 各樓層】")
+            for floor_line in end_floors:
+                lines.append("  " + floor_line)
         self.show_message("\n".join(lines))
 
     # 兩站之間的坡度說明，例如「（上坡 4%）」、「（下坡 9%，陡）」；沒有高度資料或幾乎平的就回傳空字串
