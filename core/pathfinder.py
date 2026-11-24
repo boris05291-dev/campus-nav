@@ -100,8 +100,10 @@ def dijkstra(graph, start, end, use_slope=False, counter=None):
 
 
 # A*：和 Dijkstra 幾乎一樣，差別在 heap 排序用的是「已經走的花費 + 估計離終點還多遠」
-# 估計值用 graph.straight_distance（兩點的直線距離），真正沿著道路走一定不會比直線短，
+# 估計值用 graph.straight_distance（兩點的直線距離再打折，見 core/graph.py），
+# 打折是因為經緯度有誤差、下坡花費也會比距離少；打完折的估計值不會比真正的花費大，
 # 所以 A* 找到的路線一定和 Dijkstra 一樣短，只是會比較少去看「離終點反方向」的地點
+# （tests/test_data.py 會檢查每條路的估計值都沒有超過真正的花費）
 def a_star(graph, start, end, use_slope=False, counter=None):
     check_places(graph, start, end)
     counter = start_counter(counter)

@@ -161,7 +161,8 @@ class CampusGraph:
     #           但最多只少算 config.DOWNHILL_MAX（10%）
     #           例：100 公尺下降 3 公尺，花費 = 100 - 3 × 2 = 94
     # - 陡下坡（坡度達 config.STEEP_SLOPE）：要小心走，不會變快，花費就是距離
-    # 花費最少是距離的 9 成，比 A* 估計用的直線距離（也打了 9 折）大，所以 A* 的答案還是對的
+    # 花費最少是距離的 9 成；A* 估計用的直線距離有把這 1 成和經緯度誤差都扣掉（見 straight_distance），
+    # 所以估計值不會比真正的花費大，A* 的答案還是對的
     def step_cost(self, a, b, distance, use_slope):
         if not use_slope or distance == 0:
             return distance
@@ -195,8 +196,12 @@ class CampusGraph:
         d_lat = lat2 - lat1
         d_lng = math.radians(place_b["lng"] - place_a["lng"])
         h = math.sin(d_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d_lng / 2) ** 2
-        # 經緯度本身有一點誤差，乘 0.9 讓估計值保守一點，才不會比真正的道路還長
-        return 2 * earth_radius * math.asin(math.sqrt(h)) * 0.9
+        # A* 的估計值不能比「真正的花費」大，所以要打兩次折：
+        # 1. 經緯度有誤差，實測有的道路比直線還短一點（最多約 4%），乘 0.9 留空間
+        # 2. 找最省力的路時，下坡花費最少只有距離的 (1 - DOWNHILL_MAX)，也就是 9 成，所以再乘這個數
+        # 0.9 × 0.9 = 0.81；tests/test_data.py 會檢查每條路都符合這個條件
+        safe = 0.9 * (1 - config.DOWNHILL_MAX)
+        return 2 * earth_radius * math.asin(math.sqrt(h)) * safe
 
     # 用使用者打的文字找地點（路口不算），大小寫不分
     # 找的順序：完整名稱或代號（例如 J、6、B1/B2）完全一樣 → 推薦清單（suggest）剛好只有一個
