@@ -14,4 +14,5 @@ core/pathfinder.py：dijkstra、a_star、bellman_ford(graph, start, end, use_slo
 core/route.py：plan_route 檢查輸入再找路線、route_via 途經點、build_stops 導航步驟、route_summary 距離與上下坡、compare_algorithms 比較三種演算法
 ui/app.py、ui/map_view.py、ui/side_panel.py：tkinter 視窗
 main.py：程式入口
+tools/：檢查資料用的小工具，導航程式不會用到。split_roads.py 把道路切成約 10 公尺一小段存成 data/road_pieces.json；view_pieces.py 是把小段編號、坡度畫在地圖上的檢查畫面
 tests/：unittest 測試（test_algorithms.py 測三種演算法與坡度）
