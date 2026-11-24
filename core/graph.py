@@ -122,17 +122,34 @@ class CampusGraph:
             return 0
         return self.climb(a, b) / distance * 100
 
-    # 走一段路（從 a 到 b，長度 distance）的「花費」，演算法用它當權重
+    # 走一段路（從 a 到 b，長度 distance）的「花費」，演算法用它當權重，單位是「等於平地走幾公尺」
     # use_slope 是 False：花費就是距離
-    # use_slope 是 True：上坡每爬 1 公尺，當作多走 config.CLIMB_FACTOR 公尺；下坡不加
-    # （登山常用的「奈史密斯規則」：爬高 1 公尺大約和平地走 8 公尺一樣累）
+    # use_slope 是 True：
+    # - 上坡：每爬 1 公尺，當作多走 config.CLIMB_FACTOR 公尺（奈史密斯規則：爬高 1 公尺大約和平地走 8 公尺一樣累）
+    #         再乘上「陡度加成」：坡度每多 1%，爬坡多花 config.STEEP_EXTRA%，所以越陡越慢
+    #         例：100 公尺爬 5 公尺（坡度 5%），加成 1.25 倍，花費 = 100 + 5 × 8 × 1.25 = 150
+    # - 緩下坡：走起來比較快，每下降 1 公尺少算 config.DOWNHILL_FACTOR 公尺，
+    #           但最多只少算 config.DOWNHILL_MAX（10%）
+    #           例：100 公尺下降 3 公尺，花費 = 100 - 3 × 2 = 94
+    # - 陡下坡（坡度達 config.STEEP_SLOPE）：要小心走，不會變快，花費就是距離
+    # 花費最少是距離的 9 成，比 A* 估計用的直線距離（也打了 9 折）大，所以 A* 的答案還是對的
     def step_cost(self, a, b, distance, use_slope):
-        if not use_slope:
+        if not use_slope or distance == 0:
             return distance
         up = self.climb(a, b)
-        if up < 0:
-            up = 0
-        return distance + up * config.CLIMB_FACTOR
+        percent = up / distance * 100
+
+        if up > 0:
+            steep_bonus = 1 + percent * config.STEEP_EXTRA / 100
+            return distance + up * config.CLIMB_FACTOR * steep_bonus
+
+        if up < 0 and -percent < config.STEEP_SLOPE:
+            saved = -up * config.DOWNHILL_FACTOR
+            if saved > distance * config.DOWNHILL_MAX:
+                saved = distance * config.DOWNHILL_MAX
+            return distance - saved
+
+        return distance
 
     # 用經緯度算 a、b 兩個地點的直線距離（公尺），公式是球面上兩點距離的 haversine 公式
     # 任何一個地點沒有經緯度，就回傳 0（A* 會變得和 Dijkstra 一樣，但答案還是對的）

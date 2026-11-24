@@ -6,12 +6,14 @@
 # - direction_text：兩個地點之間是往哪個方向走
 # - turn_text：走到某個地點時要左轉、右轉、直走還是迴轉
 # - route_summary：整條路線的實際距離、總共上坡幾公尺、下坡幾公尺
+# - walk_minutes：整條路線的步行時間（上坡越陡越慢、緩下坡稍微快）
 # - compare_algorithms：同一段路用 Dijkstra、A*、Bellman-Ford 各找一次，比較它們的差別（含搜尋過程，給動畫用）
 # 這裡只做計算，不碰 tkinter，所以可以直接用 unittest 測試。
 
 import math
 import time
 
+import config
 from core.pathfinder import a_star, bellman_ford, dijkstra
 
 # 要比較的三種演算法：(顯示的名稱, 函式)
@@ -165,6 +167,17 @@ def route_summary(graph, path):
         else:
             down = down - climb
     return distance, up, down
+
+
+# 算出整條路線的步行時間（分鐘）
+# 每一段都用 graph.step_cost（考慮坡度）換算成「等於平地走幾公尺」，加起來再除以走路速度
+# 所以上坡越陡越慢、緩下坡稍微快一點（規則見 core/graph.py 的 step_cost）
+def walk_minutes(graph, path):
+    total = 0
+    for i in range(len(path) - 1):
+        distance = graph.distance_between(path[i], path[i + 1])
+        total = total + graph.step_cost(path[i], path[i + 1], distance, True)
+    return total / config.WALK_SPEED
 
 
 # 用三種演算法各找一次同一段路（start → via → end，via 可以是 None），比較它們的差別
