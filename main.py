@@ -2,28 +2,12 @@
 # 負責：程式入口。執行 python main.py 時從這裡開始，
 # 讀取地圖資料、建立主視窗（ui/app.py）並啟動程式。
 
-import json
 import tkinter as tk
 from tkinter import messagebox
 
 import config
-from core.graph import CampusGraph
+from core.graph import CampusGraph, load_error_reason
 from ui.app import App
-
-
-# 把讀地圖時發生的錯誤，換成一句看得懂的中文原因
-# 注意順序：JSONDecodeError 也是一種 ValueError，所以要先檢查它
-def load_error_reason(error):
-    if isinstance(error, FileNotFoundError):
-        return "找不到地圖檔。"
-    if isinstance(error, json.JSONDecodeError):
-        return "JSON 格式有錯：第 " + str(error.lineno) + " 行、第 " + str(error.colno) + " 個字附近。"
-    if isinstance(error, KeyError):
-        return "資料缺少欄位：" + str(error)
-    if isinstance(error, ValueError):
-        # graph.py 自己丟出的錯誤（例如道路連到不存在的地點），訊息本來就是中文
-        return str(error)
-    return "檔案打不開：" + str(error)
 
 
 # 告訴 Windows「這個程式自己會處理螢幕縮放」
@@ -44,7 +28,8 @@ def main():
     make_text_sharp()
     try:
         graph = CampusGraph(config.MAP_DATA_PATH)
-    except (OSError, ValueError, KeyError) as error:
+    # TypeError：資料型別錯了但沒被 graph.py 的檢查擋到，也要跳出說明，不要直接當掉
+    except (OSError, ValueError, KeyError, TypeError) as error:
         root = tk.Tk()
         root.withdraw()   # 藏起空白的主視窗，只顯示錯誤訊息框
         messagebox.showerror(

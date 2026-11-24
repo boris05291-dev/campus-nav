@@ -21,6 +21,25 @@ import math
 import config
 
 
+# 把讀地圖時發生的錯誤，換成一句看得懂的中文原因（main.py 跳出錯誤視窗時用）
+# 放在這裡而不是 main.py：main.py 會載入 tkinter，測試只想測這個函式時不必連 tkinter 一起載入
+# 注意順序：JSONDecodeError 也是一種 ValueError，所以要先檢查它
+def load_error_reason(error):
+    if isinstance(error, FileNotFoundError):
+        return "找不到地圖檔。"
+    if isinstance(error, json.JSONDecodeError):
+        return "JSON 格式有錯：第 " + str(error.lineno) + " 行、第 " + str(error.colno) + " 個字附近。"
+    if isinstance(error, KeyError):
+        return "資料缺少欄位：" + str(error)
+    if isinstance(error, ValueError):
+        # CampusGraph 自己丟出的錯誤（例如道路連到不存在的地點），訊息本來就是中文
+        return str(error)
+    if isinstance(error, TypeError):
+        # 上面沒檢查到的型別錯誤，例如某個地點寫成字串而不是 { }
+        return "資料的格式不對（某個欄位的型別錯了）：" + str(error)
+    return "檔案打不開：" + str(error)
+
+
 class CampusGraph:
 
     # 建立物件時呼叫：準備好空的資料，然後讀取 JSON 檔
@@ -39,6 +58,10 @@ class CampusGraph:
     def load(self, file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        # 最外層要是 { "nodes": [...], "edges": [...] }；如果是 [ ] 或數字，下面的 data["nodes"] 會出現看不懂的錯誤
+        if not isinstance(data, dict):
+            raise ValueError("地圖檔最外層要用 { } 包起來，裡面放 nodes 和 edges。")
 
         # 第一步：登記所有地點，每個地點一開始沒有鄰居
         # 用 data["nodes"] 而不是 data.get，格式不對時會直接報錯，不會默默變成空地圖
@@ -70,6 +93,9 @@ class CampusGraph:
             raise ValueError("道路連到不存在的地點：" + a)
         if b not in self.adjacency:
             raise ValueError("道路連到不存在的地點：" + b)
+        # 距離要是數字；JSON 裡寫成 "10"（有引號）會變成字串，下面比大小時會當掉
+        if not isinstance(distance, (int, float)):
+            raise ValueError("道路距離要是數字（不要加引號）：" + a + " - " + b)
         # Dijkstra 不能處理負的距離，所以在這裡擋掉
         if distance < 0:
             raise ValueError("道路距離不能是負數：" + a + " - " + b)

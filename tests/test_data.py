@@ -2,16 +2,15 @@
 # 負責：檢查「真正的」地圖資料 data/map_data.json 有沒有打錯。
 # 其他測試用的是 4 個點的小地圖，只能確認程式邏輯；這裡確認的是資料本身，
 # 以後改了 JSON（加路、改距離、改 id），跑一次測試就知道有沒有改壞。
-# 也測試 main.py 的 load_error_reason（讀地圖失敗時顯示的中文原因）。
+# 也測試 core/graph.py 的 load_error_reason（讀地圖失敗時顯示的中文原因）。
 
 import json
 import math
 import unittest
 
 import config
-from core.graph import CampusGraph
+from core.graph import CampusGraph, load_error_reason
 from core.pathfinder import dijkstra
-from main import load_error_reason
 from ui.scenery import BUILDINGS
 
 # 「公尺 ÷ 像素長度」的合理範圍。目前 127 條路都在 0.67 ~ 1.0 之間，
@@ -134,6 +133,7 @@ class TestLoadErrorReason(unittest.TestCase):
         self.assertIn("第 1 行", load_error_reason(caught.exception))
         self.assertIn("nodes", load_error_reason(KeyError("nodes")))
         self.assertEqual(load_error_reason(ValueError("道路連到不存在的地點：X")), "道路連到不存在的地點：X")
+        self.assertIn("格式不對", load_error_reason(TypeError("string indices must be integers")))
 
 
 if __name__ == "__main__":
