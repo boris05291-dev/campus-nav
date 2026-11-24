@@ -3,6 +3,7 @@
 # 確認 CampusGraph 能正確讀取 JSON、建立鄰接表、算出權重。
 
 import os
+import tempfile
 import unittest
 
 from core.graph import CampusGraph
@@ -34,6 +35,22 @@ class TestCampusGraph(unittest.TestCase):
             self.graph.add_road("LIB", "DORM", -1)
         self.graph.add_road("LIB", "DORM", 0)
         self.assertEqual(self.graph.distance_between("LIB", "DORM"), 0)
+
+    # 距離不是數字（JSON 裡寫成 "10"）要報中文的 ValueError，不是讓程式當掉
+    def test_add_road_distance_not_number(self):
+        with self.assertRaises(ValueError):
+            self.graph.add_road("LIB", "DORM", "10")
+
+    # 地圖檔最外層不是 { }（例如寫成 [ ]）要報 ValueError
+    def test_load_root_not_dict(self):
+        folder = tempfile.mkdtemp()
+        bad_map = os.path.join(folder, "bad_map.json")
+        with open(bad_map, "w", encoding="utf-8") as f:
+            f.write("[]")
+        with self.assertRaises(ValueError):
+            CampusGraph(bad_map)
+        os.remove(bad_map)
+        os.rmdir(folder)
 
     # 兩個直接相連的地點，要回傳道路距離（兩個方向都一樣）
     def test_distance_between(self):
