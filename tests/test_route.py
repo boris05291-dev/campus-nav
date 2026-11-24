@@ -73,6 +73,17 @@ class TestRouteVia(unittest.TestCase):
         self.assertEqual(route_via(self.graph, "LIB", "DORM", "GYM"), ([], float("inf")))
         self.assertEqual(route_via(self.graph, "DORM", "LIB", "GYM"), ([], float("inf")))
 
+    # 有傳 counter 時，兩段的搜尋過程要接起來，第二段的檢查次數接在第一段後面
+    def test_via_counter_steps(self):
+        counter = {}
+        route_via(self.graph, "LIB", "EAT", "GYM", False, dijkstra, counter)
+        self.assertEqual(counter["steps"][0][0], ["LIB"])
+        self.assertEqual(counter["steps"][-1][0], ["GYM"])
+        self.assertEqual(counter["steps"][-1][1], counter["checked"])
+        # 檢查次數只會越來越多，不會變少
+        for i in range(len(counter["steps"]) - 1):
+            self.assertLessEqual(counter["steps"][i][1], counter["steps"][i + 1][1])
+
 
 class TestPlanRoute(unittest.TestCase):
 

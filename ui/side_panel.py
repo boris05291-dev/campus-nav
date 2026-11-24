@@ -3,9 +3,11 @@
 # - 讓使用者輸入起點和終點，打字時會自動推薦地點
 # - 「最省力路線（避開上坡）」勾選框
 # - 提供「找路線」和「比較三種演算法」按鈕
-# - 顯示結果：經過的地點、總距離、上下坡、預估步行時間；或三種演算法的比較
+# - 顯示結果：經過的地點、總距離、上下坡、預估步行時間；
+#   或三種演算法的比較（長條圖 + 播放搜尋過程動畫的按鈕）
 
 import tkinter as tk
+from tkinter import font as tkfont
 
 import config
 from core.route import direction_text
@@ -228,6 +230,8 @@ class SidePanel(tk.Frame):
         for i in range(len(config.COMPARE_COLORS)):
             self.result_text.tag_config("color" + str(i), foreground=config.COMPARE_COLORS[i], font=config.BOLD_FONT)
         self.result_text.tag_config("bold", font=config.BOLD_FONT)
+        # 比較結果裡放進結果區的長條圖和按鈕；換顯示別的內容時要把它們刪掉
+        self.compare_widgets = []
 
     # 回傳起點 id；找不到、或打的字符合好幾個地點，就回傳 None
     def get_start(self):
@@ -277,8 +281,8 @@ class SidePanel(tk.Frame):
 
     # 在結果區顯示一段文字（會先清掉舊的內容）
     def show_message(self, message):
+        self.clear_result()
         self.result_text.config(state="normal")
-        self.result_text.delete("1.0", tk.END)
         self.result_text.insert(tk.END, message)
         self.result_text.config(state="disabled")
 
@@ -330,16 +334,97 @@ class SidePanel(tk.Frame):
             note = note + "，陡"
         return "（" + note + "）"
 
-    # 顯示三種演算法的比較結果
-    # results 是 core/route.py compare_algorithms 回傳的清單；place_count、road_count 是地圖有幾個地點、幾條路
-    def show_comparison(self, results, place_count, road_count):
+    # 清空結果區：刪掉上次比較放進來的長條圖和按鈕，再刪掉所有文字
+    def clear_result(self):
+        for widget in self.compare_widgets:
+            widget.destroy()
+        self.compare_widgets = []
         self.result_text.config(state="normal")
         self.result_text.delete("1.0", tk.END)
+        self.result_text.config(state="disabled")
+
+    # 把一個元件（長條圖、按鈕）放進結果區，接在文字後面
+    def add_widget(self, widget):
+        self.result_text.window_create(tk.END, window=widget)
+        self.result_text.insert(tk.END, "\n")
+        self.compare_widgets.append(widget)
+
+    # 畫一張橫的長條圖，回傳畫好的 Canvas
+    # title 標題；labels 每條的名稱；values 每條的數值；texts 每條後面要寫的字（例如「30 次」）
+    # 最大的值畫滿，其他照比例縮短，一眼就看得出差幾倍
+    def make_bar_chart(self, title, labels, values, texts):
+        font = tkfont.Font(font=config.LABEL_FONT)
+        row = font.metrics("linespace") + 10              # 每一條的高度
+        width = config.PANEL_WIDTH - 60                    # 扣掉左右留白和捲軸
+        name_width = font.measure("Bellman-Ford") + 10     # 左邊放名稱的寬度
+        # 最長的那條後面還要留位置寫數字
+        text_width = 0
+        for text in texts:
+            text_width = max(text_width, font.measure(text))
+        bar_space = width - name_width - text_width - 12
+        biggest = max(max(values), 0.000001)               # 避免全部是 0 時除以 0
+
+        canvas = tk.Canvas(self.result_text, width=width, height=row * (len(values) + 1),
+                           bg=config.PANEL_BG_COLOR, highlightthickness=0)
+        canvas.create_text(0, row / 2, text=title, anchor=tk.W, fill=config.TEXT_COLOR, font=config.BOLD_FONT)
+        for i in range(len(values)):
+            color = config.COMPARE_COLORS[i]
+            y = row * (i + 1) + row / 2
+            length = max(values[i] / biggest * bar_space, 2)   # 至少 2 像素，太小也看得到
+            canvas.create_text(0, y, text=labels[i], anchor=tk.W, fill=color, font=config.LABEL_FONT)
+            canvas.create_rectangle(name_width, y - row / 2 + 4, name_width + length, y + row / 2 - 4,
+                                    fill=color, outline="")
+            canvas.create_text(name_width + length + 6, y, text=texts[i], anchor=tk.W,
+                               fill=config.TEXT_COLOR, font=config.LABEL_FONT)
+        return canvas
+
+    # 做出「播放動畫」的按鈕：一個「三種依序播放」，再加每種演算法各一個
+    # on_play 是 app.py 的 play，傳入要播的演算法編號清單，例如 [0, 1, 2] 或 [2]
+    def make_play_buttons(self, results, on_play):
+        all_button = tk.Button(self.result_text, text="▶ 三種依序播放", font=config.TEXT_FONT,
+                               command=lambda: on_play([0, 1, 2]))
+        self.add_widget(all_button)
+        row = tk.Frame(self.result_text, bg=config.PANEL_BG_COLOR)
+        for i in range(len(results)):
+            # index=i 是把「這一圈的編號」存進 lambda，不然每個按鈕都會變成最後一個編號
+            button = tk.Button(row, text="▶ " + results[i]["name"], font=config.LABEL_FONT,
+                               fg=config.COMPARE_COLORS[i], command=lambda index=i: on_play([index]))
+            button.pack(side=tk.LEFT, padx=(0, 4))
+        self.add_widget(row)
+
+    # 顯示三種演算法的比較結果
+    # results 是 core/route.py compare_algorithms 回傳的清單；place_count、road_count 是地圖有幾個地點、幾條路
+    # on_play 是按下「播放」按鈕時要呼叫的函式（見 make_play_buttons）
+    def show_comparison(self, results, place_count, road_count, on_play):
+        self.clear_result()
+        self.result_text.config(state="normal")
 
         self.result_text.insert(tk.END, "三種演算法比較\n", "bold")
         self.result_text.insert(tk.END, "地圖共 " + str(place_count) + " 個地點、" + str(road_count) + " 條路\n")
         if self.use_slope():
             self.result_text.insert(tk.END, "（目前比較的是「最省力路線」）\n")
+        self.result_text.insert(tk.END, "\n")
+
+        # 長條圖：檢查道路的次數、花的時間
+        labels = []
+        checked = []
+        checked_texts = []
+        times = []
+        time_texts = []
+        for result in results:
+            labels.append(result["name"])
+            checked.append(result["checked"])
+            checked_texts.append(str(result["checked"]) + " 次")
+            times.append(result["ms"])
+            time_texts.append(str(round(result["ms"], 3)) + " 毫秒")
+        self.add_widget(self.make_bar_chart("檢查道路次數（越短越好）", labels, checked, checked_texts))
+        self.add_widget(self.make_bar_chart("平均每次花的時間", labels, times, time_texts))
+        self.result_text.insert(tk.END, "\n")
+
+        # 動畫按鈕
+        self.result_text.insert(tk.END, "搜尋過程動畫\n", "bold")
+        self.result_text.insert(tk.END, "地圖上會一步一步亮出演算法處理過的地點，左上角顯示檢查了幾次道路。\n")
+        self.make_play_buttons(results, on_play)
         self.result_text.insert(tk.END, "\n")
 
         for i in range(len(results)):
@@ -368,7 +453,7 @@ class SidePanel(tk.Frame):
             if result["distance"] != results[0]["distance"]:
                 same = False
         if same:
-            lines.append("三種演算法找到的路線一樣長，都是最短路線；地圖上三色條紋疊在一起。")
+            lines.append("三種演算法找到的路線一樣長，都是最短路線。")
         else:
             lines.append("路線長度不一樣，請檢查程式！（正確的話三種應該一樣長）")
 
@@ -390,4 +475,7 @@ class SidePanel(tk.Frame):
         lines.append("‧ Dijkstra：每次從離起點最近的地點往外擴，到終點就停。")
         lines.append("‧ A*：多參考「離終點的直線距離」，往終點方向優先找，通常檢查得最少。")
         lines.append("‧ Bellman-Ford：每一輪都把全部道路檢查一遍，工作量最大，但能處理負的距離。")
+        lines.append("")
+        lines.append("看動畫時注意：Dijkstra 從起點往四面八方擴散；A* 幾乎直直朝終點走；"
+                     "Bellman-Ford 每一輪全部道路都會閃一下，代表又全部檢查了一遍。")
         return "\n".join(lines)

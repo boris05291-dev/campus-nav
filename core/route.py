@@ -6,7 +6,7 @@
 # - direction_text：兩個地點之間是往哪個方向走
 # - turn_text：走到某個地點時要左轉、右轉、直走還是迴轉
 # - route_summary：整條路線的實際距離、總共上坡幾公尺、下坡幾公尺
-# - compare_algorithms：同一段路用 Dijkstra、A*、Bellman-Ford 各找一次，比較它們的差別
+# - compare_algorithms：同一段路用 Dijkstra、A*、Bellman-Ford 各找一次，比較它們的差別（含搜尋過程，給動畫用）
 # 這裡只做計算，不碰 tkinter，所以可以直接用 unittest 測試。
 
 import math
@@ -36,6 +36,10 @@ def route_via(graph, start, via, end, use_slope=False, algorithm=dijkstra, count
     if counter is not None:
         counter["visited"] = counter1["visited"] + counter2["visited"]
         counter["checked"] = counter1["checked"] + counter2["checked"]
+        # 搜尋過程接起來；第二段的「檢查了幾次道路」要加上第一段已經檢查的次數
+        counter["steps"] = list(counter1["steps"])
+        for places, checked in counter2["steps"]:
+            counter["steps"].append((places, checked + counter1["checked"]))
     if len(path1) == 0 or len(path2) == 0:
         return [], float("inf")
     # path2 的第一個點就是 via，已經在 path1 的最後面了，所以跳過，不然 via 會出現兩次
@@ -167,7 +171,7 @@ def route_summary(graph, path):
 # repeat：每種演算法重複跑幾次再算平均時間；只跑一次太快了，時間會是 0 或忽大忽小
 # 回傳一個清單，每種演算法一筆字典：
 #   name 名稱、path 路線、distance 實際距離、visited 處理幾個地點（Bellman-Ford 是幾輪）、
-#   checked 檢查幾次道路、ms 平均每次花幾毫秒
+#   checked 檢查幾次道路、ms 平均每次花幾毫秒、steps 搜尋過程（地圖播動畫用，格式見 core/pathfinder.py）
 def compare_algorithms(graph, start, end, via=None, use_slope=False, repeat=200):
     results = []
     for name, algorithm in ALGORITHMS:
@@ -188,5 +192,6 @@ def compare_algorithms(graph, start, end, via=None, use_slope=False, repeat=200)
             "visited": counter["visited"],
             "checked": counter["checked"],
             "ms": seconds / repeat * 1000,
+            "steps": counter["steps"],
         })
     return results

@@ -13,6 +13,8 @@
 # - counter：要比較三種演算法時傳一個空的字典進來，函式會把「做了多少工作」記在裡面：
 #              counter["visited"]：處理了幾個地點（Bellman-Ford 記的是跑了幾輪）
 #              counter["checked"]：檢查了幾次道路（三種演算法都用這個比較）
+#              counter["steps"]：搜尋過程，畫動畫用；每一步是 (這一步處理的地點清單, 到這一步為止檢查了幾次道路)
+#                                Dijkstra、A* 每一步處理一個地點；Bellman-Ford 每一步是一輪，記這一輪變近的地點
 
 import heapq
 
@@ -43,7 +45,14 @@ def start_counter(counter):
         counter = {}
     counter["visited"] = 0
     counter["checked"] = 0
+    counter["steps"] = []
     return counter
+
+
+# 在 counter["steps"] 記下一步：這一步處理了哪些地點、到目前為止檢查了幾次道路
+# 只是記錄給畫面播動畫用，不會影響演算法的結果
+def record_step(counter, places):
+    counter["steps"].append((places, counter["checked"]))
 
 
 # Dijkstra：找出從 start 到 end 花費最小的路線，回傳 (路線, 總花費)
@@ -71,6 +80,7 @@ def dijkstra(graph, start, end, use_slope=False, counter=None):
 
         # 已經確定終點的最短距離，可以提早結束
         if current == end:
+            record_step(counter, [current])
             break
 
         # 看看經過 current 走到每個鄰居，會不會比原本知道的路更短
@@ -84,6 +94,7 @@ def dijkstra(graph, start, end, use_slope=False, counter=None):
                 distances[neighbor] = new_distance
                 previous[neighbor] = current
                 heapq.heappush(heap, (new_distance, neighbor))
+        record_step(counter, [current])
 
     return build_path(previous, distances, start, end)
 
@@ -109,6 +120,7 @@ def a_star(graph, start, end, use_slope=False, counter=None):
         counter["visited"] = counter["visited"] + 1
 
         if current == end:
+            record_step(counter, [current])
             break
 
         for neighbor, distance in graph.neighbors(current):
@@ -120,6 +132,7 @@ def a_star(graph, start, end, use_slope=False, counter=None):
                 distances[neighbor] = new_distance
                 previous[neighbor] = current
                 heapq.heappush(heap, (new_distance + graph.straight_distance(neighbor, end), neighbor))
+        record_step(counter, [current])
 
     return build_path(previous, distances, start, end)
 
@@ -137,6 +150,7 @@ def bellman_ford(graph, start, end, use_slope=False, counter=None):
     for round_number in range(len(graph.adjacency) - 1):
         counter["visited"] = counter["visited"] + 1   # 記錄跑了幾輪
         changed = False
+        changed_places = []   # 這一輪變近的地點，畫動畫用
         # 道路是雙向的，鄰接表裡兩個方向都有，所以照鄰接表走一遍就是兩個方向都檢查到
         for current in graph.adjacency:
             if current not in distances:
@@ -148,6 +162,10 @@ def bellman_ford(graph, start, end, use_slope=False, counter=None):
                     distances[neighbor] = new_distance
                     previous[neighbor] = current
                     changed = True
+                    if neighbor not in changed_places:
+                        changed_places.append(neighbor)
+        # 最後一輪什麼都沒變，也要記下來：它還是把全部道路檢查了一遍
+        record_step(counter, changed_places)
         if not changed:
             break
 

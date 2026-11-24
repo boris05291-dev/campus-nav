@@ -3,7 +3,7 @@
 # - 用灰線畫出所有道路（沿著 path 折線），在可選的地點畫上彩色圓點和名稱
 # - 滑鼠移到地點上會顯示全名，點一下會交給 on_place_click 處理（填進起點或終點），左下角有圖例
 # - 把找到的最短路線沿著道路畫出來，並標出起點、終點
-# - 比較三種演算法時，把三條路線用不同顏色疊在一起畫
+# - 比較三種演算法時，播放搜尋過程的動畫：一步一步亮出演算法處理過的地點，最後畫出找到的路線
 # 沒有用背景圖：綠地、湖、建築、樹（ui/scenery.py）和道路、地點都是程式自己畫的
 
 import tkinter as tk
@@ -26,6 +26,8 @@ class MapView(tk.Canvas):
         )
         self.graph = graph
         self.on_place_click = on_place_click
+        # 動畫下一步的排程編號（self.after 回傳的），沒有在播動畫時是 None
+        self.animation_job = None
         self.compute_scale()
         scenery.draw_ground(self)
         self.draw_roads()
@@ -335,26 +337,115 @@ class MapView(tk.Canvas):
         self.draw_marker(path[0], config.START_COLOR)
         self.draw_marker(path[-1], config.END_COLOR)
 
-    # 比較三種演算法時用：把好幾條路線疊在一起畫，每條用不同顏色
-    # 先畫的線最粗、後畫的最細，三條路線一樣時會變成一條「三色條紋」，不一樣時就分得出來
-    def draw_compare_routes(self, paths, colors):
+    # 比較三種演算法時用：播放某一種演算法的搜尋過程（動畫）
+    # name 演算法名稱、color 顏色、path 最後找到的路線、
+    # steps 搜尋過程：[(這一步處理的地點清單, 到這一步為止檢查了幾次道路), ...]（見 core/pathfinder.py）
+    # on_done：播完後要做的事（例如接著播下一種演算法），不用的話傳 None
+    def play_search(self, name, color, path, steps, on_done):
         self.clear_route()
-        count = len(paths)
-        for i in range(count):
-            if len(paths[i]) < 2:
-                continue
-            width = config.ROUTE_WIDTH + (count - 1 - i) * 5
-            self.draw_line_on_roads(paths[i], colors[i], width)
-        if len(paths[0]) >= 2:
-            self.draw_marker(paths[0][0], config.START_COLOR)
-            self.draw_marker(paths[0][-1], config.END_COLOR)
+        # 把這次動畫要用的資料存起來，show_search_step 每一步都會用到
+        self.search_name = name
+        self.search_color = color
+        self.search_path = path
+        self.search_steps = steps
+        self.search_done = on_done
+        self.lit = set()   # 已經亮起來（處理過）的地點
+        self.draw_marker(path[0], config.START_COLOR)
+        self.draw_marker(path[-1], config.END_COLOR)
+        self.show_search_step(0)
+
+    # 動畫的第 i 步：把這一步處理的地點畫成彩色圓點，正在處理的地點加一圈外框，
+    # 左上角寫出做到第幾步、檢查了幾次道路；然後用 self.after 排好下一步
+    def show_search_step(self, i):
+        places, checked = self.search_steps[i]
+        color = self.search_color
+        is_bellman = self.search_name == "Bellman-Ford"
+
+        # 上一步的外框拿掉，只留這一步的
+        self.delete("current")
+        for place_id in places:
+            x, y = self.to_canvas(self.graph.places[place_id]["x"], self.graph.places[place_id]["y"])
+            if place_id not in self.lit:
+                self.lit.add(place_id)
+                r = config.SEARCH_DOT_RADIUS
+                self.create_oval(x - r, y - r, x + r, y + r, fill=color, outline="white", width=1, tags="search")
+            r = config.SEARCH_DOT_RADIUS + 5
+            self.create_oval(x - r, y - r, x + r, y + r, outline=color, width=3, tags=("search", "current"))
+        # 圓點放在名稱下面，名稱才不會被擋住（labelbg 是名稱的白底）
+        self.tag_lower("search", "labelbg")
+
+        # Bellman-Ford 每一輪都檢查全部道路：讓全部道路閃一下顏色，看得出它每輪都「掃全圖」
+        if is_bellman:
+            for edge in self.graph.edges:
+                self.create_line(self.to_canvas_points(edge["path"]), fill=color, width=config.ROAD_WIDTH,
+                                 capstyle=tk.ROUND, tags=("search", "sweep"))
+            self.tag_lower("sweep", "dot")
+            self.after(config.SWEEP_MS, lambda: self.delete("sweep"))
+
+        # 左上角的說明
+        if is_bellman:
+            text = ("Bellman-Ford　第 " + str(i + 1) + " 輪：把全部道路檢查一遍\n"
+                    + "這一輪有 " + str(len(places)) + " 個地點變近，累計檢查道路 " + str(checked) + " 次")
+            delay = config.ROUND_MS
+        else:
+            text = (self.search_name + "　第 " + str(i + 1) + " 步：處理「" + self.place_short_name(places[0]) + "」\n"
+                    + "已處理 " + str(len(self.lit)) + " 個地點，累計檢查道路 " + str(checked) + " 次")
+            delay = config.STEP_MS
+        self.show_status(text)
+        self.tag_raise("marker")
+
+        if i + 1 < len(self.search_steps):
+            self.animation_job = self.after(delay, lambda: self.show_search_step(i + 1))
+        else:
+            self.animation_job = self.after(delay, self.finish_search)
+
+    # 動畫最後：畫出找到的路線、寫出總結；有 on_done 的話，停一下再執行它
+    def finish_search(self):
+        self.delete("current")
+        self.draw_line_on_roads(self.search_path, self.search_color, config.ROUTE_WIDTH)
+        checked = self.search_steps[-1][1]
+        if self.search_name == "Bellman-Ford":
+            work = "跑了 " + str(len(self.search_steps)) + " 輪"
+        else:
+            work = "處理了 " + str(len(self.lit)) + " 個地點"
+        self.show_status(self.search_name + "　完成！" + work + "\n總共檢查道路 " + str(checked) + " 次，畫出找到的路線")
+        self.tag_raise("marker")
+        self.animation_job = None
+        if self.search_done is not None:
+            self.animation_job = self.after(config.PAUSE_MS, self.search_done)
+
+    # 動畫說明用的地點名稱：路口沒有名字，就寫「路口」
+    def place_short_name(self, place_id):
+        if self.graph.places[place_id]["type"] == "junction":
+            return "路口"
+        return self.graph.short_name(place_id)
+
+    # 在地圖左上角顯示動畫的說明（白底方框），舊的說明會先清掉
+    def show_status(self, text):
+        self.delete("status")
+        item = self.create_text(16, 14, text=text, anchor=tk.NW, fill=self.search_color,
+                                font=config.BOLD_FONT, tags=("search", "status"))
+        left, top, right, bottom = self.bbox(item)
+        box = self.create_rectangle(left - 8, top - 5, right + 8, bottom + 5, fill=config.INFO_BG_COLOR,
+                                    outline=self.search_color, width=2, tags=("search", "status"))
+        # 方框後畫會蓋住字，把字移回上面；整個說明放在最上層
+        self.tag_raise(item, box)
+        self.tag_raise("status")
 
     # 在某個地點畫一個有白邊的大圓點，用來標示起點或終點
     def draw_marker(self, place_id, color):
         r = config.MARKER_RADIUS
         x, y = self.to_canvas(self.graph.places[place_id]["x"], self.graph.places[place_id]["y"])
-        self.create_oval(x - r, y - r, x + r, y + r, fill=color, outline="white", width=3, tags="route")
+        self.create_oval(x - r, y - r, x + r, y + r, fill=color, outline="white", width=3, tags=("route", "marker"))
 
-    # 清掉畫面上的路線和起終點標記
+    # 停止正在播的動畫（沒有在播就不用做什麼）
+    def stop_animation(self):
+        if self.animation_job is not None:
+            self.after_cancel(self.animation_job)
+            self.animation_job = None
+
+    # 清掉畫面上的路線、起終點標記和動畫；正在播的動畫也會停下來
     def clear_route(self):
+        self.stop_animation()
         self.delete("route")
+        self.delete("search")

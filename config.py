@@ -79,6 +79,12 @@ LABEL_SIDES = {
 }
 # 比較三種演算法時，三條路線各用一種顏色（Dijkstra 紅、A* 藍、Bellman-Ford 橘）
 COMPARE_COLORS = ["#E53935", "#1E63C8", "#F29D0E"]
+# 播放搜尋過程動畫時用
+SEARCH_DOT_RADIUS = 6         # 處理過的地點畫成的小圓點半徑
+STEP_MS = 250                 # Dijkstra、A*：每處理一個地點停多久（毫秒）
+ROUND_MS = 700                # Bellman-Ford：每一輪停多久（毫秒），每輪要檢查全部道路，所以停久一點
+SWEEP_MS = 350                # Bellman-Ford 每一輪「全部道路閃一下」持續多久（毫秒）
+PAUSE_MS = 1500               # 依序播放時，播完一種演算法後，停多久再播下一種（毫秒）
 
 # ===== 步行 =====
 WALK_SPEED = 70               # 走路速度：每分鐘 70 公尺（約時速 4.2 公里），比 Google 的 80 慢一點，算進等人的時間
