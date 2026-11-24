@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 import config
-from core.route import build_stops, compare_algorithms, plan_route, route_summary, walk_minutes
+from core.route import build_stops, compare_algorithms, plan_route, route_summary, stairs_count, walk_minutes
 from ui.map_view import MapView
 from ui.side_panel import SidePanel
 
@@ -112,9 +112,11 @@ class App(tk.Tk):
         distance, up, down = route_summary(self.graph, path)
         # 步行時間：每段路依坡度換算（上坡越陡越慢、緩下坡稍微快），細節見 core/graph.py 的 step_cost
         minutes = walk_minutes(self.graph, path)
+        # 路線上有幾段樓梯，結果區會提醒（推行李、推輪椅的人會想知道）
+        stairs = stairs_count(self.graph, path)
 
         self.map_view.draw_route(path)
-        self.side_panel.show_result(stops, distance, minutes, up, down)
+        self.side_panel.show_result(stops, distance, minutes, up, down, stairs)
 
     # 按下「比較三種演算法」時執行：同一段路用 Dijkstra、A*、Bellman-Ford 各找一次，
     # 結果區用長條圖比較工作量和時間，地圖上依序播放三種演算法的搜尋過程動畫

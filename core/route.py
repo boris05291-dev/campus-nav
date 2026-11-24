@@ -7,6 +7,7 @@
 # - turn_text：走到某個地點時要左轉、右轉、直走還是迴轉
 # - route_summary：整條路線的實際距離、總共上坡幾公尺、下坡幾公尺
 # - walk_minutes：整條路線的步行時間（上坡越陡越慢、緩下坡稍微快）
+# - stairs_count：路線上有幾段樓梯
 # - compare_algorithms：同一段路用 Dijkstra、A*、Bellman-Ford 各找一次，比較它們的差別（含搜尋過程，給動畫用）
 # 這裡只做計算，不碰 tkinter，所以可以直接用 unittest 測試。
 
@@ -178,6 +179,15 @@ def walk_minutes(graph, path):
         distance = graph.distance_between(path[i], path[i + 1])
         total = total + graph.step_cost(path[i], path[i + 1], distance, True)
     return total / config.WALK_SPEED
+
+
+# 算出路線上有幾段樓梯（JSON 標了 "stairs": true 的道路），結果區會提醒使用者
+def stairs_count(graph, path):
+    count = 0
+    for i in range(len(path) - 1):
+        if graph.is_stairs(path[i], path[i + 1]):
+            count = count + 1
+    return count
 
 
 # 用三種演算法各找一次同一段路（start → via → end，via 可以是 None），比較它們的差別

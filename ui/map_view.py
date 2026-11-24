@@ -89,6 +89,7 @@ class MapView(tk.Canvas):
         return points
 
     # 每條道路沿著 path 折線畫成白線；先畫全部的綠色邊線，再畫白色路面，路口才會接得乾淨
+    # 樓梯在白色路面上再畫一條灰色虛線，看起來像一階一階的
     def draw_roads(self):
         for edge in self.graph.edges:
             self.create_line(
@@ -107,6 +108,14 @@ class MapView(tk.Canvas):
                 capstyle=tk.ROUND,
                 joinstyle=tk.ROUND,
             )
+        for edge in self.graph.edges:
+            if edge["stairs"]:
+                self.create_line(
+                    self.to_canvas_points(edge["path"]),
+                    fill=config.STAIRS_COLOR,
+                    width=config.ROAD_WIDTH,
+                    dash=config.STAIRS_DASH,
+                )
 
     # 在可以選的地點（不是路口）畫彩色圓點和名稱；滑鼠移上去會顯示全名
     def draw_places(self):
