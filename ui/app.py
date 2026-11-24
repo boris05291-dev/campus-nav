@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 import config
-from core.route import build_stops, compare_algorithms, plan_route, route_summary
+from core.route import build_stops, compare_algorithms, plan_route, route_summary, walk_minutes
 from ui.map_view import MapView
 from ui.side_panel import SidePanel
 
@@ -110,8 +110,8 @@ class App(tk.Tk):
         stops = build_stops(self.graph, path)
         # 「最省力路線」時 plan_route 回傳的是花費，所以實際距離和上下坡另外算
         distance, up, down = route_summary(self.graph, path)
-        # 步行時間：平地照走路速度算，上坡每爬 1 公尺再加上走 CLIMB_FACTOR 公尺的時間
-        minutes = (distance + up * config.CLIMB_FACTOR) / config.WALK_SPEED
+        # 步行時間：每段路依坡度換算（上坡越陡越慢、緩下坡稍微快），細節見 core/graph.py 的 step_cost
+        minutes = walk_minutes(self.graph, path)
 
         self.map_view.draw_route(path)
         self.side_panel.show_result(stops, distance, minutes, up, down)

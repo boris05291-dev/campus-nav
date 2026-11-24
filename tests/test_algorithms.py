@@ -10,7 +10,7 @@ import unittest
 import config
 from core.graph import CampusGraph
 from core.pathfinder import a_star, bellman_ford, dijkstra
-from core.route import compare_algorithms, plan_route, route_summary
+from core.route import compare_algorithms, plan_route, route_summary, walk_minutes
 
 TEST_MAP = os.path.join(os.path.dirname(__file__), "test_map.json")
 ALL = [dijkstra, a_star, bellman_ford]
@@ -98,7 +98,7 @@ class TestRealMap(unittest.TestCase):
 class TestSlope(unittest.TestCase):
 
     # 測試地圖：圖書館→餐廳→體育館 7 公尺（短），圖書館→體育館 10 公尺（長）
-    # 把餐廳設成在山上（高 5 公尺），走短的路要爬 5 公尺，等於多走 5 × 8 = 40 公尺
+    # 把餐廳設成在山上（高 5 公尺），走短的路要爬 5 公尺，而且很陡，花費比繞遠路大很多
     def setUp(self):
         self.graph = CampusGraph(TEST_MAP)
         self.graph.places["LIB"]["elevation"] = 0
@@ -115,11 +115,42 @@ class TestSlope(unittest.TestCase):
     def test_no_elevation_is_flat(self):
         self.assertEqual(self.graph.climb("GYM", "DORM"), 0)
 
-    # 上坡的花費 = 距離 + 爬升 × CLIMB_FACTOR；下坡不加
-    def test_step_cost(self):
-        self.assertEqual(self.graph.step_cost("LIB", "EAT", 4, True), 4 + 5 * config.CLIMB_FACTOR)
-        self.assertEqual(self.graph.step_cost("EAT", "GYM", 3, True), 3)
+    # 上坡的花費 = 距離 + 爬升 × CLIMB_FACTOR × 陡度加成；不考慮坡度時花費就是距離
+    # 這裡直接傳距離進去，用 LIB→EAT 的高度差（爬 5 公尺）試不同坡度
+    def test_step_cost_uphill(self):
+        steep_bonus = 1 + 5 * config.STEEP_EXTRA / 100        # 100 公尺爬 5 公尺，坡度 5%
+        self.assertAlmostEqual(self.graph.step_cost("LIB", "EAT", 100, True), 100 + 5 * config.CLIMB_FACTOR * steep_bonus)
         self.assertEqual(self.graph.step_cost("LIB", "EAT", 4, False), 4)
+
+    # 越陡越慢：一樣爬 5 公尺，路越短（越陡），爬坡多花的部分越多
+    def test_steeper_is_slower(self):
+        gentle_extra = self.graph.step_cost("LIB", "EAT", 100, True) - 100    # 坡度 5%
+        steep_extra = self.graph.step_cost("LIB", "EAT", 50, True) - 50       # 坡度 10%
+        self.assertGreater(steep_extra, gentle_extra)
+
+    # 陡度加成最多 STEEP_BONUS_MAX 倍：4 公尺爬 5 公尺（坡度 125%，像樓梯）也只乘 1.5 倍
+    def test_steep_bonus_limit(self):
+        self.assertAlmostEqual(self.graph.step_cost("LIB", "EAT", 4, True), 4 + 5 * config.CLIMB_FACTOR * config.STEEP_BONUS_MAX)
+
+    # 緩下坡比較快：100 公尺下降 3 公尺（坡度 3%），少算 3 × DOWNHILL_FACTOR 公尺
+    def test_gentle_downhill_faster(self):
+        self.graph.places["EAT"]["elevation"] = 3
+        self.assertEqual(self.graph.step_cost("EAT", "LIB", 100, True), 100 - 3 * config.DOWNHILL_FACTOR)
+
+    # 下坡最多只快 DOWNHILL_MAX（10%）：100 公尺下降 5 公尺（坡度 5%）本來要少算 10 公尺，剛好碰到上限
+    # 70 公尺下降 5 公尺（坡度約 7%）要少算 10 公尺，超過上限，只少算 7 公尺
+    def test_downhill_limit(self):
+        self.assertAlmostEqual(self.graph.step_cost("EAT", "LIB", 70, True), 70 * (1 - config.DOWNHILL_MAX))
+
+    # 陡下坡要小心走，不會變快：3 公尺下降 5 公尺，花費就是距離
+    def test_steep_downhill_not_faster(self):
+        self.assertEqual(self.graph.step_cost("EAT", "GYM", 3, True), 3)
+
+    # 步行時間：平路就是距離 ÷ 走路速度；有上坡會比較久
+    def test_walk_minutes(self):
+        self.assertAlmostEqual(walk_minutes(self.graph, ["LIB", "GYM"]), 10 / config.WALK_SPEED)
+        self.assertGreater(walk_minutes(self.graph, ["LIB", "EAT", "GYM"]), 7 / config.WALK_SPEED)
+        self.assertEqual(walk_minutes(self.graph, ["LIB"]), 0)
 
     # 不管坡度：走短的 7 公尺；最省力：改走平的 10 公尺那條，三種演算法都一樣
     def test_avoid_uphill(self):
