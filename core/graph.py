@@ -53,6 +53,8 @@ class CampusGraph:
                 "elevation": node.get("elevation"),
                 "lat": node.get("lat"),
                 "lng": node.get("lng"),
+                # 各樓層有哪些單位，例如 {"2F": ["出納", "註冊"], ...}；沒填就是空的 {}
+                "floors": node.get("floors", {}),
             }
             self.adjacency[place_id] = []
 
@@ -212,10 +214,11 @@ class CampusGraph:
             elif code.startswith(text) or name.startswith(text):
                 score = 1
             else:
-                # 每一個字都要出現在名稱裡才算符合
+                # 每一個字都要出現在名稱或樓層單位裡才算符合（例如打「出納」會找到 C 棟）
+                search_text = name + " " + self.rooms_text(place_id)
                 all_found = True
                 for word in words:
-                    if word not in name:
+                    if word not in search_text:
                         all_found = False
                 if not all_found:
                     continue
@@ -228,6 +231,42 @@ class CampusGraph:
         for score, name, place_id in results:
             ids.append(place_id)
         return ids
+
+    # 把某個地點所有樓層的單位接成一個字串（小寫），給 suggest 搜尋用
+    # 例如 C 棟會得到「營繕 僑生資源 … 應英 動畫」；沒有樓層資料就回傳空字串
+    def rooms_text(self, place_id):
+        rooms = []
+        for floor, names in self.places[place_id]["floors"].items():
+            for room in names:
+                rooms.append(room)
+        return " ".join(rooms).lower()
+
+    # 找出使用者打的字是在哪一樓的哪個單位，回傳像「2F 出納」的字串，給推薦清單顯示
+    # 打的字直接出現在地點名稱裡（例如「圖書」），就不用另外說明，回傳空字串；找不到也回傳空字串
+    # 有好幾個字（用空白分開）的話，只要其中一個字是單位名稱就算
+    def room_hint(self, place_id, text):
+        text = text.strip().lower()
+        if text == "":
+            return ""
+        name = self.places[place_id]["name"].lower()
+        found = []
+        for word in text.split():
+            if word in name:
+                continue
+            for floor, names in self.places[place_id]["floors"].items():
+                for room in names:
+                    if word in room.lower():
+                        found.append(floor + " " + room)
+        return "、".join(found)
+
+    # 回傳某個地點的樓層說明，一行一層，由高樓層往低樓層排（和看建築物的順序一樣）
+    # 例如 ["4F：應英、動畫", "3F：應中、應日、…"]；沒有樓層資料就回傳空清單
+    def floor_lines(self, place_id):
+        lines = []
+        for floor, names in self.places[place_id]["floors"].items():
+            lines.append(floor + "：" + "、".join(names))
+        lines.reverse()
+        return lines
 
     # 回傳比較短的地點名稱：去掉括號裡的長說明
     # 例如「C 行政＆教學大樓（視覺特效…）」→「C 行政＆教學大樓」；地圖和結果區都用這個

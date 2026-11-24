@@ -102,6 +102,25 @@ class TestCampusGraph(unittest.TestCase):
         self.graph.places["EAT"]["name"] = "餐廳（體育館旁）"
         self.assertEqual(self.graph.suggest("體育"), ["GYM", "EAT"])
 
+    # 打樓層裡的單位名稱（例如「出納」），也要找得到那棟建築；名稱和單位可以混著打
+    def test_suggest_matches_rooms(self):
+        self.assertEqual(self.graph.suggest("出納"), ["EAT"])
+        self.assertEqual(self.graph.find_place("出納"), "EAT")
+        self.assertEqual(self.graph.suggest("餐廳 會計"), ["EAT"])
+        self.assertEqual(self.graph.suggest("圖書 出納"), [])
+
+    # 推薦清單的樓層提示：打的是單位就說在幾樓；打的是名稱本身、或沒有樓層資料，就是空字串
+    def test_room_hint(self):
+        self.assertEqual(self.graph.room_hint("EAT", "出納"), "2F 出納")
+        self.assertEqual(self.graph.room_hint("EAT", "餐廳"), "")
+        self.assertEqual(self.graph.room_hint("EAT", ""), "")
+        self.assertEqual(self.graph.room_hint("LIB", "出納"), "")
+
+    # 樓層說明：高樓層排前面；沒有樓層資料的地點回傳空清單
+    def test_floor_lines(self):
+        self.assertEqual(self.graph.floor_lines("EAT"), ["2F：出納、會計", "1F：學餐"])
+        self.assertEqual(self.graph.floor_lines("LIB"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

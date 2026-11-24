@@ -96,6 +96,26 @@ class TestMapData(unittest.TestCase):
             with self.subTest(road=edge["from"] + " - " + edge["to"]):
                 self.assertLessEqual(abs(self.graph.slope_percent(edge["from"], edge["to"])), MAX_SLOPE)
 
+    # 樓層資料（floors）只能填在建築和設施上，每一層至少要有一個單位，單位名稱不能是空的
+    def test_floors_reasonable(self):
+        for place_id, place in self.graph.places.items():
+            for floor, rooms in place["floors"].items():
+                with self.subTest(place=place_id, floor=floor):
+                    self.assertNotEqual(place["type"], "junction")
+                    self.assertGreater(len(rooms), 0)
+                    for room in rooms:
+                        self.assertNotEqual(room.strip(), "")
+
+    # 行政地圖上的單位，打名稱就要找得到所在的建築（抽幾個常用的檢查）
+    def test_find_offices(self):
+        self.assertEqual(self.graph.find_place("出納"), "C")
+        self.assertEqual(self.graph.find_place("註冊"), "C")
+        self.assertEqual(self.graph.find_place("學餐"), "K")
+        self.assertEqual(self.graph.find_place("觀光"), "F")
+        self.assertEqual(self.graph.find_place("體育室"), "P6")
+        # 「會計」C 棟和 I 棟都有，要讓使用者自己選
+        self.assertEqual(sorted(self.graph.suggest("會計")), ["C", "I"])
+
     # scenery.py 的建築物是用地點 id 找位置，JSON 改了 id 卻忘了改這裡，程式一開就會當掉
     def test_building_ids_exist(self):
         for building in BUILDINGS:
