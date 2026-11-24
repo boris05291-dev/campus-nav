@@ -10,7 +10,7 @@ import unittest
 
 import config
 from core.graph import CampusGraph, load_error_reason
-from core.pathfinder import dijkstra
+from core.pathfinder import a_star, dijkstra
 from ui.scenery import BUILDINGS
 
 # 「公尺 ÷ 像素長度」的合理範圍。目前 127 條路都在 0.67 ~ 1.0 之間，
@@ -68,6 +68,30 @@ class TestMapData(unittest.TestCase):
             b = self.raw_nodes[edge["to"]]
             with self.subTest(road=edge["from"] + " - " + edge["to"]):
                 self.assertGreaterEqual(edge["distance"], straight_distance(a, b) * 0.95)
+
+    # A* 的估計值（graph.straight_distance）不能比走這條路真正的花費大，不然 A* 可能找錯路
+    # 兩個方向、有沒有算坡度都要檢查（下坡時花費最小，最容易出問題）
+    def test_a_star_guess_not_too_big(self):
+        for edge in self.graph.edges:
+            a = edge["from"]
+            b = edge["to"]
+            for here, there in [(a, b), (b, a)]:
+                guess = self.graph.straight_distance(here, there)
+                for use_slope in [False, True]:
+                    cost = self.graph.step_cost(here, there, edge["distance"], use_slope)
+                    with self.subTest(road=here + " → " + there, use_slope=use_slope):
+                        self.assertLessEqual(guess, cost)
+
+    # 每一組起點、終點，A* 找到的花費都要和 Dijkstra 一樣（有沒有算坡度都要）
+    def test_a_star_same_as_dijkstra(self):
+        ids = list(self.graph.places)
+        for start in ids:
+            for end in ids:
+                for use_slope in [False, True]:
+                    expected = dijkstra(self.graph, start, end, use_slope)[1]
+                    result = a_star(self.graph, start, end, use_slope)[1]
+                    with self.subTest(start=start, end=end, use_slope=use_slope):
+                        self.assertAlmostEqual(result, expected)
 
     # 道路是雙向的，所以只要從一個地點走得到其他每個地點，任兩個地點之間就都走得到
     def test_all_places_reachable(self):

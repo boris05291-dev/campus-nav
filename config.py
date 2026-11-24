@@ -99,7 +99,8 @@ STEEP_EXTRA = 5
 STEEP_BONUS_MAX = 1.5
 # 緩下坡比較快：每下降 1 公尺，當作少走幾公尺
 DOWNHILL_FACTOR = 2
-# 下坡最多快多少（0.1 ＝ 最多少算 10% 的距離）；不能超過 0.1，否則 A* 的直線距離估計會太大
+# 下坡最多快多少（0.1 ＝ 最多少算 10% 的距離）
+# A* 的直線距離估計會跟著這個數字自動打折（見 core/graph.py 的 straight_distance），改了也不會算錯
 DOWNHILL_MAX = 0.1
 # 坡度超過這個百分比，結果區會標示「陡」；陡下坡要小心走，不會變快
 STEEP_SLOPE = 8
