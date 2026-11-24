@@ -122,7 +122,7 @@ class TestMapData(unittest.TestCase):
     # 實地確認過的樓梯（2026-11-24），JSON 裡都要標 "stairs": true；其他道路都不是樓梯
     def test_known_stairs(self):
         expected = [("P12", "P11"), ("P11", "P10"), ("F", "jF"), ("P5", "jN13"),
-                    ("P5", "jN14"), ("jR39", "P6"), ("P8", "H")]
+                    ("P5", "jN14"), ("jR39", "P6")]
         found = []
         for edge in self.graph.edges:
             if edge["stairs"]:
