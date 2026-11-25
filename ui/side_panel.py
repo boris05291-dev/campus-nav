@@ -68,7 +68,7 @@ class SearchBox:
             return
         self.update_suggestions()
 
-    # 依照輸入框的字重新產生推薦清單，預設選第一筆（最像的）
+    # 依照輸入框的字重新產生推薦清單，有打字的話預設選第一筆（最像的）
     def update_suggestions(self):
         text = self.entry.get()
         self.suggestions = self.graph.suggest(text)
@@ -86,7 +86,9 @@ class SearchBox:
             return
         # 筆數少的時候清單就矮一點，最多 SUGGEST_ROWS 行，更多的可以捲
         self.listbox.config(height=min(len(self.suggestions), config.SUGGEST_ROWS))
-        self.listbox.selection_set(0)
+        # 輸入框是空的就不預先選，不然按 Enter 會自動填進第一個地點，途經點就清不掉了
+        if text.strip() != "":
+            self.listbox.selection_set(0)
         self.show()
 
     # 把推薦清單顯示在輸入框正下方，並放到最上層，才不會被下面的元件擋住
