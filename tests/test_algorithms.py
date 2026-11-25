@@ -95,6 +95,15 @@ class TestRealMap(unittest.TestCase):
             self.assertEqual(result["distance"], results[0]["distance"])
             self.assertGreater(result["checked"], 0)
 
+    # 最省力模式和途經點：三種演算法的花費要一樣（比的是花費，不是距離）
+    def test_compare_algorithms_slope_and_via(self):
+        for via in [None, "P1"]:
+            results = compare_algorithms(self.graph, "F", "L", via, use_slope=True, repeat=1)
+            with self.subTest(via=via):
+                for result in results:
+                    self.assertAlmostEqual(result["cost"], results[0]["cost"], places=3)
+                    self.assertGreaterEqual(result["cost"], result["distance"] * 0.9)
+
 
 class TestSlope(unittest.TestCase):
 

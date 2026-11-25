@@ -193,7 +193,7 @@ def stairs_count(graph, path):
 # 用三種演算法各找一次同一段路（start → via → end，via 可以是 None），比較它們的差別
 # repeat：每種演算法重複跑幾次再算平均時間；只跑一次太快了，時間會是 0 或忽大忽小
 # 回傳一個清單，每種演算法一筆字典：
-#   name 名稱、path 路線、distance 實際距離、visited 處理幾個地點（Bellman-Ford 是幾輪）、
+#   name 名稱、path 路線、distance 實際距離、cost 演算法算出的總花費（最省力模式下含坡度，用來比較三種有沒有一樣好）、visited 處理幾個地點（Bellman-Ford 是幾輪）、
 #   checked 檢查幾次道路、ms 平均每次花幾毫秒、steps 搜尋過程（地圖播動畫用，格式見 core/pathfinder.py）
 def compare_algorithms(graph, start, end, via=None, use_slope=False, repeat=200):
     results = []
@@ -212,6 +212,7 @@ def compare_algorithms(graph, start, end, via=None, use_slope=False, repeat=200)
             "name": name,
             "path": path,
             "distance": distance,
+            "cost": total,
             "visited": counter["visited"],
             "checked": counter["checked"],
             "ms": seconds / repeat * 1000,

@@ -464,17 +464,19 @@ class SidePanel(tk.Frame):
         self.result_text.insert(tk.END, self.comparison_summary(results))
         self.result_text.config(state="disabled")
 
-    # 依照比較結果寫幾句結論：路線一不一樣、誰檢查最少道路、誰最快
+    # 依照比較結果寫幾句結論：路線花費一不一樣、誰檢查最少道路、誰最快
+    # 比的是花費不是距離：最省力模式下，花費一樣的路線距離可能不同
     def comparison_summary(self, results):
         lines = []
         same = True
         for result in results:
-            if result["distance"] != results[0]["distance"]:
+            # 花費是小數，加法順序不同可能差一點點，所以差不到 0.001 就當作一樣
+            if abs(result["cost"] - results[0]["cost"]) > 0.001:
                 same = False
         if same:
-            lines.append("三種演算法找到的路線一樣長，都是最短路線。")
+            lines.append("三種演算法找到的路線花費一樣，都是最好的路線。")
         else:
-            lines.append("路線長度不一樣，請檢查程式！（正確的話三種應該一樣長）")
+            lines.append("路線花費不一樣，請檢查程式！（正確的話三種應該一樣）")
 
         least = results[0]
         fastest = results[0]
@@ -493,7 +495,7 @@ class SidePanel(tk.Frame):
         lines.append("")
         lines.append("‧ Dijkstra：每次從離起點最近的地點往外擴，到終點就停。")
         lines.append("‧ A*：多參考「離終點的直線距離」，往終點方向優先找，通常檢查得最少。")
-        lines.append("‧ Bellman-Ford：每一輪都把全部道路檢查一遍，工作量最大，但能處理負的距離。")
+        lines.append("‧ Bellman-Ford：每一輪都把全部道路檢查一遍，工作量最大。")
         lines.append("")
         lines.append("看動畫時注意：Dijkstra 從起點往四面八方擴散；A* 幾乎直直朝終點走；"
                      "Bellman-Ford 每一輪全部道路都會閃一下，代表又全部檢查了一遍。")
